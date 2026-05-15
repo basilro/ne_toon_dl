@@ -7,9 +7,9 @@ from .setup import *
 
 class ModelNaverToonItem(ModelBase):
     P = P
-    __tablename__ = 'naver_toon_dl_item'
+    __tablename__ = 'ne_toon_dl_item'
     __table_args__ = (
-        UniqueConstraint('title_id', 'no', name='uq_naver_toon_dl_title_no'),
+        UniqueConstraint('title_id', 'no', name='uq_ne_toon_dl_title_no'),
         {'mysql_collate': 'utf8_general_ci'},
     )
     __bind_key__ = P.package_name
