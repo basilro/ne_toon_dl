@@ -45,19 +45,37 @@ class ModuleBasic(PluginModuleBase):
         P.logger.info('[basic] plugin_load — 유료화 공지 catch-up 예약')
         threading.Thread(target=self._startup_catch_up, daemon=True).start()
 
-    def _startup_catch_up(self):
-        """SJVA 가 SQLALCHEMY_BINDS 에 플러그인 bind 를 등록하기까지 시간이
-        걸리므로 충분히 대기 후 진입한다. 그래도 bind 가 없으면 조용히 종료 —
-        등록된 스케줄러 tick (매월 1일) 이 다음 기회에 catch-up 한다.
+    @staticmethod
+    def _wait_for_bind(timeout: int = 300, interval: int = 5) -> bool:
+        """SJVA 가 SQLALCHEMY_BINDS 에 우리 플러그인 bind 를 등록할 때까지 폴링.
+
+        ModelSetting.get 은 등록 안 된 bind 로 query 하면 내부에서 예외를 잡고
+        ERROR 로그를 찍어버리므로, 호출 전에 bind 등록을 확인해야 한다.
         """
-        time.sleep(60)
+        import time as _time
+        end = _time.time() + timeout
+        while _time.time() < end:
+            try:
+                binds = (F.app.config.get('SQLALCHEMY_BINDS') or {})
+                if P.package_name in binds:
+                    return True
+            except Exception:
+                pass
+            _time.sleep(interval)
+        return False
+
+    def _startup_catch_up(self):
+        """SJVA bind 등록 완료를 폴링한 뒤 catch-up. bind 가 끝내 안 잡히면
+        조용히 종료 — 등록된 스케줄러 tick (매월 1일) 이 다음 기회에 처리.
+        """
+        # 초기 짧은 대기 (대부분 init 빠르게 끝남)
+        time.sleep(10)
+        if not self._wait_for_bind(timeout=300, interval=5):
+            P.logger.info('[basic] catch-up: bind 등록 안 됨 — skip')
+            return
         try:
             with F.app.app_context():
-                try:
-                    flag = P.ModelSetting.get('notice_auto_dl')
-                except Exception as e:
-                    P.logger.info('[basic] catch-up: 설정 조회 불가(아직 init 중?) — skip (%s)', e)
-                    return
+                flag = P.ModelSetting.get('notice_auto_dl')
                 if (flag or 'False') != 'True':
                     P.logger.info('[basic] catch-up: notice_auto_dl Off — skip')
                     return
