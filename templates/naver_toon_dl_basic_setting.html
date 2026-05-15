@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div>
+  {{ macros.m_button_group([['globalSettingSaveBtn', '설정 저장'],
+                            ['globalImmediatelyExecuteBtn', '즉시 실행'],
+                            ['verifyCookiesBtn', '쿠키 검증']]) }}
+  {{ macros.m_row_start('5') }}
+  {{ macros.m_row_end() }}
+  <nav>
+    {{ macros.m_tab_head_start() }}
+      {{ macros.m_tab_head('normal', '일반', true) }}
+      {{ macros.m_tab_head('notify', '알림', false) }}
+      {{ macros.m_tab_head('auto', '자동', false) }}
+    {{ macros.m_tab_head_end() }}
+  </nav>
+  <form id='setting' name='setting'>
+    <div class="tab-content" id="nav-tabContent">
+      {{ macros.m_tab_content_start('normal', true) }}
+        {{ macros.setting_input_textarea('titles', '체크할 웹툰',
+            value=arg['titles'], row='5',
+            desc=['한 줄에 하나씩 (또는 | 로 구분).',
+                  '입력 형태 자유: 작품 제목 / 전체 URL / 숫자(titleId) 모두 가능.',
+                  '예) 신의 탑',
+                  '예) https://comic.naver.com/webtoon/list?titleId=183559',
+                  '예) 183559']) }}
+
+        {{ macros.setting_input_textarea('cookies_json', '네이버 쿠키 (Cookie-Editor JSON)',
+            value=arg['cookies_json'], row='6',
+            desc=['Chrome 확장 Cookie-Editor 등으로 comic.naver.com(.naver.com) 쿠키를 JSON으로 export 후 그대로 붙여넣기',
+                  '필수 쿠키: NID_AUT (네이버 통합 로그인)',
+                  '쿠키 만료 시 다시 export해서 주입']) }}
+
+        {{ macros.setting_input_text_and_buttons('download_path', '다운로드 경로',
+            [['select_download_path_btn', '경로 선택']],
+            value=arg['download_path'],
+            desc=['{다운로드경로}/{작품제목}/{NNNN_회차제목}/{001.jpg ...} 형태로 저장됨',
+                  '네이버웹툰 이미지는 원본 jpg 그대로 저장됨 (변환 없음)']) }}
+
+        <hr style="margin:18px 0;"/>
+        <h5 style="margin-bottom:8px;">유료화 공지 자동 다운로드</h5>
+
+        {{ macros.setting_checkbox('notice_auto_dl', '공지 기반 자동 다운 (이번 달 유료화 전환 작품)',
+            value=arg['notice_auto_dl'],
+            desc='On: 자동 실행 시 네이버웹툰 공지에서 \"YYYY년 M월 유료화 전환 작품 안내\" 를 찾아 작품 추출 → 무료 회차 자동 다운로드. 추천 스케줄: 매월 1일 (0 9 1 * *). 서비스가 내려가 있어서 못 돌았다면 시작 시 한 번 자동 catch-up.') }}
+
+        {{ macros.setting_input_text('notice_subdir', '유료화 작품 저장 폴더명',
+            value=arg['notice_subdir'],
+            desc=['다운로드 경로 아래 만들어질 하위 폴더 이름. 기본: 완결',
+                  '예) {다운로드경로}/완결/{작품}/{NNNN_회차}/',
+                  '※ 전환일(공지의 M월 N일)이 이미 지났으면 자동 스킵',
+                  '※ 이번 달 공지만 처리 — 지난달/이전 공지는 무시']) }}
+
+        {{ macros.setting_buttons([['globalDbDeleteBtn', '이력 초기화']], 'DB 정리') }}
+      {{ macros.m_tab_content_end() }}
+
+      {{ macros.m_tab_content_start('notify', false) }}
+        <div style="padding:6px 0 14px; color:#666;">
+          웹훅 URL 입력 시에만 알림 발송. <strong>Discord 웹훅</strong>을 기본 대상으로 하며,
+          Slack 웹훅 URL 도 자동 인식합니다. 빈 칸이면 해당 알림은 보내지 않습니다.
+          <br/><small>Discord 웹훅 URL 형식 예: <code>https://discord.com/api/webhooks/{ID}/{TOKEN}</code></small>
+        </div>
+
+        {{ macros.setting_input_text_and_buttons('notify_webhook_cookie', '쿠키 만료 알림 URL',
+            [['notifyTestCookieBtn', '테스트']],
+            value=arg['notify_webhook_cookie'],
+            desc=['네이버 쿠키 만료 감지 시 1회 발송 (복구되면 다음 만료 때 다시 1회).',
+                  '비우면 알림 OFF.']) }}
+
+        {{ macros.setting_input_text_and_buttons('notify_webhook_download', '다운로드 완료 알림 URL',
+            [['notifyTestDownloadBtn', '테스트']],
+            value=arg['notify_webhook_download'],
+            desc=['자동 실행이 끝나고 받은 회차가 있을 때 요약 메시지 발송.',
+                  '받은 회차가 없으면 알림 안 보냄.',
+                  '비우면 알림 OFF.']) }}
+      {{ macros.m_tab_content_end() }}
+
+      {{ macros.m_tab_content_start('auto', false) }}
+        {{ macros.global_setting_scheduler_button(arg['is_include'], arg['is_running']) }}
+        {{ macros.setting_input_text('basic_interval', '스케쥴링 실행 정보',
+            value=arg['basic_interval'], col='3',
+            desc=['Interval(minute) 또는 Cron. 예: 180 또는 0 */3 * * *']) }}
+        {{ macros.setting_checkbox('basic_auto_start', '시작시 자동실행',
+            value=arg['basic_auto_start'], desc='On: 시작시 스케쥴러 자동 등록') }}
+      {{ macros.m_tab_content_end() }}
+    </div>
+  </form>
+</div>
+
+<script type="text/javascript">
+var package_name = "{{ arg['package_name'] }}";
+
+$(document).ready(function(){});
+
+$('body').on('click', '#select_download_path_btn', function(e){
+  e.preventDefault();
+  var path = $('#download_path').val().trim() || '/';
+  globalSelectLocalFolder('다운로드 폴더', path, function(result){
+    $('#download_path').val(result);
+  });
+});
+
+$('body').on('click', '#verifyCookiesBtn', function(e){
+  e.preventDefault();
+  $.post('/' + package_name + '/ajax/basic/command',
+         {command: 'verify_cookies'},
+         function(data){
+    if(data.ret === 'success'){ $.notify(data.msg || '쿠키 유효', {className: 'success'}); }
+    else { $.notify(data.msg || '쿠키 검증 실패', {className: 'error'}); }
+  });
+});
+
+function _notifyTest(kind){
+  $.post('/' + package_name + '/ajax/basic/command',
+         {command: 'notify_test', arg1: kind},
+         function(data){
+    if(data && data.ret === 'success'){
+      $.notify(data.msg || '발송 성공', {className: 'success'});
+    } else {
+      $.notify((data && data.msg) || '발송 실패', {className: 'error'});
+    }
+  }).fail(function(xhr){
+    $.notify('서버 호출 실패: ' + xhr.status, {className: 'error'});
+  });
+}
+$('body').on('click', '#notifyTestCookieBtn',  function(e){ e.preventDefault(); _notifyTest('cookie'); });
+$('body').on('click', '#notifyTestDownloadBtn',function(e){ e.preventDefault(); _notifyTest('download'); });
+</script>
+{% endblock %}
