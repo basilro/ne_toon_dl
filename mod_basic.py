@@ -1,5 +1,3 @@
-import threading
-import time
 import traceback
 
 from .model import ModelNaverToonItem
@@ -17,8 +15,8 @@ class ModuleBasic(PluginModuleBase):
         self.db_default = {
             f'db_version': '1',
             f'{self.name}_auto_start': 'False',
-            # 매월 1일 09:00 — 유료화 공지 catch-up + 신규 무료 회차 점검
-            f'{self.name}_interval': '0 9 1 * *',
+            # 매일 09:00 — 신규 무료 회차 + 이번 달 유료화 공지 자동 catch-up
+            f'{self.name}_interval': '0 9 * * *',
             f'{self.name}_db_delete_day': '90',
             f'{self.name}_db_auto_delete': 'False',
             f'{P.package_name}_item_last_list_option': '',
@@ -35,73 +33,6 @@ class ModuleBasic(PluginModuleBase):
             'auto_start': 'False',
         }
         self.web_list_model = ModelNaverToonItem
-
-    def plugin_load(self):
-        """SJVA 시작 시 호출 — 유료화 공지 catch-up 트리거.
-
-        서비스가 내려가있어서 매월 1일 스케줄을 못 돌린 경우, 시작 직후 한 번
-        체크해서 미처리 공지가 있으면 처리한다. (이번 달 + 미처리 공지만)
-        """
-        P.logger.info('[basic] plugin_load — 유료화 공지 catch-up 예약')
-        threading.Thread(target=self._startup_catch_up, daemon=True).start()
-
-    @staticmethod
-    def _bind_ready() -> bool:
-        """Flask-SQLAlchemy 3.x 의 db.engines 에 우리 bind 가 잡혔는지.
-
-        flask_sqlalchemy/session.py:get_bind 가 실제로 보는 곳이 db.engines.
-        app.config['SQLALCHEMY_BINDS'] 에 URI 만 박혀있고 engine 이 lazy
-        등록 안 된 상태에서는 ModelSetting.get 이 framework 내부에서 실패한다.
-        """
-        try:
-            eng = db.engines.get(P.package_name)
-            return eng is not None
-        except Exception:
-            return False
-
-    @staticmethod
-    def _wait_for_bind(timeout: int = 300, interval: int = 5) -> bool:
-        import time as _time
-        end = _time.time() + timeout
-        while _time.time() < end:
-            if ModuleBasic._bind_ready():
-                return True
-            _time.sleep(interval)
-        return False
-
-    def _startup_catch_up(self):
-        """SJVA bind 등록 완료를 폴링한 뒤 catch-up. bind 가 끝내 안 잡히면
-        조용히 종료 — 등록된 스케줄러 tick (매월 1일) 이 다음 기회에 처리.
-        """
-        time.sleep(10)
-        ready = self._wait_for_bind(timeout=300, interval=5)
-        # 진단 로그 — 등록 상태 가시화
-        try:
-            cfg_binds = list((F.app.config.get('SQLALCHEMY_BINDS') or {}).keys())
-        except Exception:
-            cfg_binds = ['<?>']
-        try:
-            engines = list(getattr(db, 'engines', {}) or {})
-        except Exception:
-            engines = ['<?>']
-        P.logger.info('[basic] catch-up bind 상태: ready=%s cfg_binds=%s engines=%s',
-                      ready, cfg_binds, engines)
-        if not ready:
-            P.logger.info('[basic] catch-up: bind 등록 안 됨 — skip '
-                          '(다음 스케줄 tick 이 처리)')
-            return
-        try:
-            with F.app.app_context():
-                flag = P.ModelSetting.get('notice_auto_dl')
-                if (flag or 'False') != 'True':
-                    P.logger.info('[basic] catch-up: notice_auto_dl Off — skip')
-                    return
-                P.logger.info('[basic] catch-up: Worker 실행')
-                w = Worker()
-                w.run()
-        except Exception as e:
-            P.logger.warning('[basic] catch-up 예외(다음 스케줄 tick 에 처리됨): %s', e)
-            P.logger.warning(traceback.format_exc())
 
     def process_menu(self, sub, req):
         arg = P.ModelSetting.to_dict()
