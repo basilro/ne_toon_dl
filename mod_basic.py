@@ -46,21 +46,26 @@ class ModuleBasic(PluginModuleBase):
         threading.Thread(target=self._startup_catch_up, daemon=True).start()
 
     @staticmethod
-    def _wait_for_bind(timeout: int = 300, interval: int = 5) -> bool:
-        """SJVA 가 SQLALCHEMY_BINDS 에 우리 플러그인 bind 를 등록할 때까지 폴링.
+    def _bind_ready() -> bool:
+        """Flask-SQLAlchemy 3.x 의 db.engines 에 우리 bind 가 잡혔는지.
 
-        ModelSetting.get 은 등록 안 된 bind 로 query 하면 내부에서 예외를 잡고
-        ERROR 로그를 찍어버리므로, 호출 전에 bind 등록을 확인해야 한다.
+        flask_sqlalchemy/session.py:get_bind 가 실제로 보는 곳이 db.engines.
+        app.config['SQLALCHEMY_BINDS'] 에 URI 만 박혀있고 engine 이 lazy
+        등록 안 된 상태에서는 ModelSetting.get 이 framework 내부에서 실패한다.
         """
+        try:
+            eng = db.engines.get(P.package_name)
+            return eng is not None
+        except Exception:
+            return False
+
+    @staticmethod
+    def _wait_for_bind(timeout: int = 300, interval: int = 5) -> bool:
         import time as _time
         end = _time.time() + timeout
         while _time.time() < end:
-            try:
-                binds = (F.app.config.get('SQLALCHEMY_BINDS') or {})
-                if P.package_name in binds:
-                    return True
-            except Exception:
-                pass
+            if ModuleBasic._bind_ready():
+                return True
             _time.sleep(interval)
         return False
 
@@ -68,10 +73,22 @@ class ModuleBasic(PluginModuleBase):
         """SJVA bind 등록 완료를 폴링한 뒤 catch-up. bind 가 끝내 안 잡히면
         조용히 종료 — 등록된 스케줄러 tick (매월 1일) 이 다음 기회에 처리.
         """
-        # 초기 짧은 대기 (대부분 init 빠르게 끝남)
         time.sleep(10)
-        if not self._wait_for_bind(timeout=300, interval=5):
-            P.logger.info('[basic] catch-up: bind 등록 안 됨 — skip')
+        ready = self._wait_for_bind(timeout=300, interval=5)
+        # 진단 로그 — 등록 상태 가시화
+        try:
+            cfg_binds = list((F.app.config.get('SQLALCHEMY_BINDS') or {}).keys())
+        except Exception:
+            cfg_binds = ['<?>']
+        try:
+            engines = list(getattr(db, 'engines', {}) or {})
+        except Exception:
+            engines = ['<?>']
+        P.logger.info('[basic] catch-up bind 상태: ready=%s cfg_binds=%s engines=%s',
+                      ready, cfg_binds, engines)
+        if not ready:
+            P.logger.info('[basic] catch-up: bind 등록 안 됨 — skip '
+                          '(다음 스케줄 tick 이 처리)')
             return
         try:
             with F.app.app_context():
