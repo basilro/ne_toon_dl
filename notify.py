@@ -4,7 +4,7 @@ from typing import List, Dict
 import requests
 
 
-def send_webhook(url: str, message: str, username: str = 'naver_toon_dl',
+def send_webhook(url: str, message: str, username: str = 'ne_toon_dl',
                  timeout: int = 10) -> bool:
     """웹훅 URL 로 메시지 발송. URL 비어있으면 False 반환 (no-op).
 

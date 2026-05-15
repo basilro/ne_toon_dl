@@ -1,4 +1,4 @@
-# naver_toon_dl
+# ne_toon_dl
 
 네이버웹툰 무료 회차 자동 다운로드 SJVA 플러그인.
 
@@ -13,7 +13,7 @@
    - `charge=true` 또는 `thumbnailLock=true` → 유료/잠금 (스킵)
 4. 뷰어 페이지 (`/webtoon/detail?titleId=...&no=...`) HTML 에서 `<img id="content_image_N">` 추출
 5. 본문 이미지 직접 다운 (원본 jpg) → `{경로}/{작품}/{NNNN_회차}/{001.jpg ...}` 저장
-6. DB(`naver_toon_dl_item`) 에 회차별 이력 기록 — 같은 회차 재다운로드 안 함
+6. DB(`ne_toon_dl_item`) 에 회차별 이력 기록 — 같은 회차 재다운로드 안 함
 
 > 네이버웹툰은 카카오웹툰과 달리 AES 암호화/티켓 시스템이 없어 단순 이미지 다운로드 흐름이다.
 
