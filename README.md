@@ -28,9 +28,9 @@
 4. 각 작품의 무료 회차 → `{다운로드경로}/완결/{작품}/{NNNN_회차}/` 에 저장
 5. `last_paid_notice_id` 기록 — 같은 공지 다시 안 돌림
 
-**스케줄 권장**: `0 9 1 * *` (매월 1일 09:00). 매월 말 공지 → 1일 catch-up.
+**스케줄 권장**: `0 9 * * *` (매일 09:00). 매일 공지 1건 확인 — 새 공지 없으면 API 1회만 쓰고 종료. 처리한 공지는 `last_paid_notice_id` 로 기록되어 중복 다운로드 안 함.
 
-**서비스 다운 → 재시작 catch-up**: SJVA 시작 시 `plugin_load` 훅이 한 번 더 확인 ([mod_basic.py:_startup_catch_up](mod_basic.py)). 1일 스케줄을 놓쳤어도 재시작하면 그 직후에 처리됨.
+**서비스 다운 → 재시작 catch-up**: 매일 스케줄이라 다음날 09시에 자동 처리됨. (`plugin_load` 같은 별도 훅 불필요 — SJVA 의 plugin_load 는 DB bind 등록 전에 호출되어 `ModelSetting` 접근이 안 됨.)
 
 ## 설정 (`설정` 메뉴)
 

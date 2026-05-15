@@ -42,7 +42,7 @@
 
         {{ macros.setting_checkbox('notice_auto_dl', '공지 기반 자동 다운 (이번 달 유료화 전환 작품)',
             value=arg['notice_auto_dl'],
-            desc='On: 자동 실행 시 네이버웹툰 공지에서 \"YYYY년 M월 유료화 전환 작품 안내\" 를 찾아 작품 추출 → 무료 회차 자동 다운로드. 추천 스케줄: 매월 1일 (0 9 1 * *). 서비스가 내려가 있어서 못 돌았다면 시작 시 한 번 자동 catch-up.') }}
+            desc='On: 자동 실행 시 네이버웹툰 공지에서 \"YYYY년 M월 유료화 전환 작품 안내\" 를 찾아 작품 추출 → 무료 회차 자동 다운로드. 추천 스케줄: 매일 09시 (0 9 * * *). 매일 1회 공지만 체크(API 1회) — 새 공지 없으면 즉시 종료. 서비스 다운 후 재시작해도 다음날 09시에 자동 catch-up.') }}
 
         {{ macros.setting_input_text('notice_subdir', '유료화 작품 저장 폴더명',
             value=arg['notice_subdir'],
