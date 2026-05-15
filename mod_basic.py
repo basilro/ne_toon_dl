@@ -46,19 +46,27 @@ class ModuleBasic(PluginModuleBase):
         threading.Thread(target=self._startup_catch_up, daemon=True).start()
 
     def _startup_catch_up(self):
-        # 앱 컨텍스트 + 다른 초기화 완료 대기
-        time.sleep(15)
+        """SJVA 가 SQLALCHEMY_BINDS 에 플러그인 bind 를 등록하기까지 시간이
+        걸리므로 충분히 대기 후 진입한다. 그래도 bind 가 없으면 조용히 종료 —
+        등록된 스케줄러 tick (매월 1일) 이 다음 기회에 catch-up 한다.
+        """
+        time.sleep(60)
         try:
-            if (P.ModelSetting.get('notice_auto_dl') or 'False') != 'True':
-                P.logger.info('[basic] catch-up: notice_auto_dl Off — skip')
-                return
             with F.app.app_context():
+                try:
+                    flag = P.ModelSetting.get('notice_auto_dl')
+                except Exception as e:
+                    P.logger.info('[basic] catch-up: 설정 조회 불가(아직 init 중?) — skip (%s)', e)
+                    return
+                if (flag or 'False') != 'True':
+                    P.logger.info('[basic] catch-up: notice_auto_dl Off — skip')
+                    return
                 P.logger.info('[basic] catch-up: Worker 실행')
                 w = Worker()
                 w.run()
         except Exception as e:
-            P.logger.error('[basic] catch-up Exception: %s', e)
-            P.logger.error(traceback.format_exc())
+            P.logger.warning('[basic] catch-up 예외(다음 스케줄 tick 에 처리됨): %s', e)
+            P.logger.warning(traceback.format_exc())
 
     def process_menu(self, sub, req):
         arg = P.ModelSetting.to_dict()
