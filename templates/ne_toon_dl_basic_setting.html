@@ -4,7 +4,8 @@
 <div>
   {{ macros.m_button_group([['globalSettingSaveBtn', '설정 저장'],
                             ['globalImmediatelyExecuteBtn', '즉시 실행'],
-                            ['verifyCookiesBtn', '쿠키 검증']]) }}
+                            ['verifyCookiesBtn', '쿠키 검증'],
+                            ['runNoticeBtn', '공지 즉시 실행']]) }}
   {{ macros.m_row_start('5') }}
   {{ macros.m_row_end() }}
   <nav>
@@ -107,6 +108,22 @@ $('body').on('click', '#verifyCookiesBtn', function(e){
          function(data){
     if(data.ret === 'success'){ $.notify(data.msg || '쿠키 유효', {className: 'success'}); }
     else { $.notify(data.msg || '쿠키 검증 실패', {className: 'error'}); }
+  });
+});
+
+$('body').on('click', '#runNoticeBtn', function(e){
+  e.preventDefault();
+  if (!confirm('이번 달 유료화 공지를 지금 처리합니다.\n진행 상황은 \"진행 상황\" 메뉴에서 확인하세요.\n계속하시겠습니까?')) return;
+  $.post('/' + package_name + '/ajax/basic/command',
+         {command: 'run_notice_now'},
+         function(data){
+    if(data && data.ret === 'success'){
+      $.notify(data.msg || '공지 기반 다운로드 시작됨', {className: 'success'});
+    } else {
+      $.notify((data && data.msg) || '실행 실패', {className: 'error'});
+    }
+  }).fail(function(xhr){
+    $.notify('서버 호출 실패: ' + xhr.status, {className: 'error'});
   });
 });
 

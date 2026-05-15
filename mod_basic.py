@@ -1,3 +1,4 @@
+import threading
 import traceback
 
 from .model import ModelNaverToonItem
@@ -60,6 +61,8 @@ class ModuleBasic(PluginModuleBase):
                     ret = {'ret': 'fail', 'msg': str(e)}
             elif command == 'run_now':
                 ret = self.do_action()
+            elif command == 'run_notice_now':
+                ret = self.do_action_notice_only()
             elif command == 'mrun':
                 from . import manual_worker
                 url = (arg1 or '').strip()
@@ -143,3 +146,26 @@ class ModuleBasic(PluginModuleBase):
             P.logger.error('[basic] do_action Exception: %s', e)
             P.logger.error(traceback.format_exc())
             return {'ret': 'fail', 'msg': str(e)}
+
+    def do_action_notice_only(self):
+        """공지만 즉시 실행 — HTTP 요청에서 즉시 응답하고 백그라운드에서 처리.
+
+        오래 걸릴 수 있으니(작품 27개 × 다수 회차) 동기 실행하면 timeout.
+        진행 상황은 worker._auto_state 로 노출되며 '진행 상황' 메뉴에서 확인.
+        """
+        from . import worker as auto_worker
+        if auto_worker.get_auto_state().get('status') == 'running':
+            return {'ret': 'fail', 'msg': '이미 자동 다운로드 실행 중'}
+
+        def _bg():
+            try:
+                with F.app.app_context():
+                    w = Worker()
+                    w.run_notice_only()
+            except Exception as e:
+                P.logger.error('[basic] notice-only run Exception: %s', e)
+                P.logger.error(traceback.format_exc())
+
+        threading.Thread(target=_bg, daemon=True).start()
+        return {'ret': 'success',
+                'msg': '공지 기반 다운로드 시작됨 — "진행 상황" 메뉴에서 확인'}
