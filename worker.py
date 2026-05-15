@@ -249,6 +249,65 @@ class Worker:
 
         return 'downloaded' if downloaded_count else 'skipped'
 
+    # ---- public: 공지만 실행 (UI '공지 즉시 실행' 버튼) ----
+    def run_notice_only(self) -> dict:
+        """공지 처리만 실행 — 메인 작품 다운로드 단계는 건너뜀.
+
+        설정의 notice_auto_dl 토글 상태는 무시한다 (사용자가 명시적으로 클릭한
+        실행이므로). last_paid_notice_id 가 최신 공지와 같으면 _process_paid_notices
+        안에서 자체 skip — 중복 다운로드 안 함.
+        """
+        P.logger.info('[basic] Worker.run_notice_only BEGIN')
+        _auto_reset()
+        _auto_set(status='running', started_at=datetime.now().isoformat(),
+                  message='공지 처리 시작', titles_total=0)
+        if not self.download_root:
+            _auto_set(status='error', finished_at=datetime.now().isoformat(),
+                      message='download_path 미설정')
+            return {'ret': 'fail', 'reason': 'no_download_path'}
+        if not self.cookies_json:
+            _auto_set(status='error', finished_at=datetime.now().isoformat(),
+                      message='cookies_json 미설정')
+            return {'ret': 'fail', 'reason': 'no_cookies'}
+
+        try:
+            self.client = NaverToonClient(self.cookies_json, logger=P.logger)
+        except AuthRequiredError as e:
+            _auto_set(status='error', finished_at=datetime.now().isoformat(),
+                      message=f'쿠키 인증 실패: {e}')
+            return {'ret': 'fail', 'reason': 'auth', 'msg': str(e)}
+
+        if not self.client.verify():
+            _auto_set(status='error', finished_at=datetime.now().isoformat(),
+                      message='쿠키 만료 — 재주입 필요')
+            return {'ret': 'fail', 'reason': 'cookie_expired'}
+
+        summary = {'titles': 0, 'downloaded': 0, 'skipped': 0, 'failed': 0}
+        try:
+            ncount = self._process_paid_notices(summary)
+            P.logger.info('[basic] 공지 즉시 실행: %d 작품 추가 다운', ncount)
+        except Exception as e:
+            import traceback
+            P.logger.error('공지 처리 예외: %s', e)
+            P.logger.error(traceback.format_exc())
+
+        # 다운로드 완료 요약 알림
+        if self.completed_items and self.notify_download_url:
+            try:
+                msg = build_download_summary(self.completed_items)
+                if msg:
+                    ok = send_webhook(self.notify_download_url, msg)
+                    P.logger.info('다운로드 요약 알림 발송: %s (%d건)',
+                                  'OK' if ok else 'FAIL', len(self.completed_items))
+            except Exception as e:
+                P.logger.warning('다운로드 요약 알림 예외: %s', e)
+
+        _auto_set(status='done', finished_at=datetime.now().isoformat(),
+                  current_title='', current_phase='', current_episode='',
+                  message=(f"공지 완료 — 다운 {summary['downloaded']}, "
+                           f"스킵 {summary['skipped']}, 실패 {summary['failed']}"))
+        return {'ret': 'success', **summary}
+
     # ---- 유료화 공지 처리 ----
     def _process_paid_notices(self, summary: Dict[str, int]) -> int:
         """가장 최근 '유료화 전환' 공지에서 작품을 추출 → 무료 회차 다운.
