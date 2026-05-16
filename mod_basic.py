@@ -63,6 +63,8 @@ class ModuleBasic(PluginModuleBase):
                 ret = self.do_action()
             elif command == 'run_notice_now':
                 ret = self.do_action_notice_only()
+            elif command == 'sync_metadata':
+                ret = self.do_action_sync_metadata()
             elif command == 'mrun':
                 from . import manual_worker
                 url = (arg1 or '').strip()
@@ -169,3 +171,21 @@ class ModuleBasic(PluginModuleBase):
         threading.Thread(target=_bg, daemon=True).start()
         return {'ret': 'success',
                 'msg': '공지 기반 다운로드 시작됨 — "진행 상황" 메뉴에서 확인'}
+
+    def do_action_sync_metadata(self):
+        """체크할 작품 전체의 info.xml / cover.jpg 누락분 백그라운드 동기화."""
+        from . import worker as auto_worker
+        if auto_worker.get_auto_state().get('status') == 'running':
+            return {'ret': 'fail', 'msg': '이미 자동 다운로드 실행 중'}
+
+        def _bg():
+            try:
+                with F.app.app_context():
+                    Worker().sync_metadata_all()
+            except Exception as e:
+                P.logger.error('[basic] sync_metadata run Exception: %s', e)
+                P.logger.error(traceback.format_exc())
+
+        threading.Thread(target=_bg, daemon=True).start()
+        return {'ret': 'success',
+                'msg': '메타 동기화 시작됨 — "진행 상황" 메뉴에서 확인'}
