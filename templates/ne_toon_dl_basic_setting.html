@@ -5,7 +5,8 @@
   {{ macros.m_button_group([['globalSettingSaveBtn', '설정 저장'],
                             ['globalImmediatelyExecuteBtn', '즉시 실행'],
                             ['verifyCookiesBtn', '쿠키 검증'],
-                            ['runNoticeBtn', '공지 즉시 실행']]) }}
+                            ['runNoticeBtn', '공지 즉시 실행'],
+                            ['syncMetadataBtn', '메타 동기화']]) }}
   {{ macros.m_row_start('5') }}
   {{ macros.m_row_end() }}
   <nav>
@@ -119,6 +120,22 @@ $('body').on('click', '#runNoticeBtn', function(e){
          function(data){
     if(data && data.ret === 'success'){
       $.notify(data.msg || '공지 기반 다운로드 시작됨', {className: 'success'});
+    } else {
+      $.notify((data && data.msg) || '실행 실패', {className: 'error'});
+    }
+  }).fail(function(xhr){
+    $.notify('서버 호출 실패: ' + xhr.status, {className: 'error'});
+  });
+});
+
+$('body').on('click', '#syncMetadataBtn', function(e){
+  e.preventDefault();
+  if (!confirm('체크할 작품 폴더에 info.xml / cover.jpg 가 없으면 생성합니다.\n다운로드 폴더에 작품 폴더가 있는 항목만 처리됩니다.\n진행 상황은 \"진행 상황\" 메뉴에서 확인하세요.\n계속하시겠습니까?')) return;
+  $.post('/' + package_name + '/ajax/basic/command',
+         {command: 'sync_metadata'},
+         function(data){
+    if(data && data.ret === 'success'){
+      $.notify(data.msg || '메타 동기화 시작됨', {className: 'success'});
     } else {
       $.notify((data && data.msg) || '실행 실패', {className: 'error'});
     }
