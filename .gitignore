@@ -17,12 +17,15 @@ Thumbs.db
 
 # PoC/탐색 산출물 (실수로 다시 생기면 커밋 방지)
 _poc/
+_probe/
 _dump_*/
 _session/
 *.har
 *.cef
 cookies*.json
 browser_cookies.json
+cookie.txt
+cookie*.txt
 
 # 리버스 엔지니어링 작업 결과물 (실수로 커밋 방지)
 /js/
