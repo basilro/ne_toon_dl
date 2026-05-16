@@ -18,6 +18,38 @@ def _safe_filename(s: str) -> str:
     return s.strip().strip('.')
 
 
+def _xml_escape(s) -> str:
+    if s is None:
+        return ''
+    return (str(s).replace('&', '&amp;')
+                  .replace('<', '"').replace('>', '"').strip())
+
+
+# Kavita/Komga 호환 ComicInfo XML — reading_info 의 포맷과 동일
+_INFO_XML = '''<?xml version="1.0"?>
+<ComicInfo xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Title>{title}</Title>
+  <Series>{title}</Series>
+  <Summary>{desc}</Summary>
+  <Writer>{author}</Writer>
+  <Publisher>{publisher}</Publisher>
+  <Genre>{genre}</Genre>
+  <Tags>{tags}</Tags>
+  <LanguageISO>ko</LanguageISO>
+  <Notes>{notes}</Notes>
+  <CoverArtist></CoverArtist>
+  <Penciller></Penciller>
+  <Inker>{inker}</Inker>
+  <Colorist></Colorist>
+  <Letterer></Letterer>
+  <Editor></Editor>
+  <Characters></Characters>
+  <Year>{year}</Year>
+  <Month>{month}</Month>
+  <Day>{day}</Day>
+</ComicInfo>'''
+
+
 # ---- 자동 다운로드 진행 상태 (싱글톤) ----
 _auto_state_lock = threading.Lock()
 _auto_state: Dict[str, Any] = {
@@ -200,8 +232,9 @@ class Worker:
 
     def _process_title(self, title: str, title_id: int) -> str:
         _auto_set(current_phase='fetch_episodes')
+        meta: Dict[str, Any] = {}
         try:
-            meta = self.client.get_content(title_id)
+            meta = self.client.get_content(title_id) or {}
             if meta.get('titleName'):
                 title = meta['titleName']
                 _auto_set(current_title=title)
@@ -216,6 +249,9 @@ class Worker:
         if not articles:
             P.logger.warning('[%s] 회차 없음', title)
             return 'failed'
+
+        # info.xml / cover.jpg — 작품 폴더에 없으면 자동 생성 (다운로드 여부 무관)
+        self._ensure_title_metadata(title, title_id, meta, articles, group='main')
 
         # 분류 — 무료만 받음
         free: List[Dict] = []
@@ -398,8 +434,9 @@ class Worker:
 
     def _process_paid_title(self, title_id: int, title_name: str) -> str:
         """공지로 받은 작품 1개 — 메타 보강 후 무료 회차 모두 완결 폴더에 다운."""
+        meta: Dict[str, Any] = {}
         try:
-            meta = self.client.get_content(title_id)
+            meta = self.client.get_content(title_id) or {}
             if meta.get('titleName'):
                 title_name = meta['titleName']
                 _auto_set(current_title=f'[유료화] {title_name}')
@@ -413,6 +450,9 @@ class Worker:
             return 'failed'
         if not articles:
             return 'failed'
+
+        self._ensure_title_metadata(title_name, title_id, meta, articles,
+                                    group='complete')
 
         free: List[Dict] = []
         for a in articles:
@@ -439,6 +479,203 @@ class Worker:
                                   group='complete') == 'downloaded':
                 downloaded += 1
         return 'downloaded' if downloaded else 'skipped'
+
+    # ---- 작품 폴더 메타 (info.xml / cover.jpg) ----
+    def _title_dir(self, title_name: str, group: str = 'main') -> str:
+        c_folder = _safe_filename(title_name)
+        if group == 'complete':
+            return os.path.join(self.download_root,
+                                _safe_filename(self.notice_subdir), c_folder)
+        return os.path.join(self.download_root, c_folder)
+
+    def _ensure_title_metadata(self, title_name: str, title_id: int,
+                               meta: Dict[str, Any],
+                               articles: Optional[List[Dict[str, Any]]] = None,
+                               group: str = 'main') -> Dict[str, bool]:
+        """작품 폴더에 info.xml / cover.jpg 가 없으면 생성.
+
+        - 폴더가 아직 없으면 만든다.
+        - meta 가 부족해도 있는 정보만으로 info.xml 생성 (빈 필드는 빈 태그).
+        - cover URL 이 없으면 cover.jpg 는 스킵.
+        반환: {'info': True/False, 'cover': True/False, 'dir': path}
+        """
+        result = {'info': False, 'cover': False, 'dir': ''}
+        title_dir = self._title_dir(title_name, group=group)
+        result['dir'] = title_dir
+        try:
+            os.makedirs(title_dir, exist_ok=True)
+        except Exception as e:
+            P.logger.warning('[%s] 작품 폴더 생성 실패: %s', title_name, e)
+            return result
+
+        info_path = os.path.join(title_dir, 'info.xml')
+        if not os.path.exists(info_path):
+            try:
+                xml = self._build_info_xml(title_name, meta, articles)
+                with open(info_path, 'w', encoding='utf-8') as fp:
+                    fp.write(xml)
+                P.logger.info('[%s] info.xml 생성', title_name)
+                result['info'] = True
+            except Exception as e:
+                P.logger.warning('[%s] info.xml 생성 실패: %s', title_name, e)
+
+        cover_path = os.path.join(title_dir, 'cover.jpg')
+        if not os.path.exists(cover_path):
+            url = (meta.get('sharedThumbnailUrl')
+                   or meta.get('posterThumbnailUrl')
+                   or meta.get('thumbnailUrl'))
+            if url and self.client is not None:
+                try:
+                    data = self.client.download_image(url, title_id)
+                    with open(cover_path, 'wb') as fp:
+                        fp.write(data)
+                    P.logger.info('[%s] cover.jpg 생성', title_name)
+                    result['cover'] = True
+                except Exception as e:
+                    P.logger.warning('[%s] cover.jpg 생성 실패: %s',
+                                     title_name, e)
+        return result
+
+    def _build_info_xml(self, title_name: str, meta: Dict[str, Any],
+                        articles: Optional[List[Dict[str, Any]]] = None) -> str:
+        """네이버 작품 메타 → ComicInfo XML. 부족한 필드는 빈 값."""
+        title = meta.get('titleName') or title_name or ''
+        synopsis = meta.get('synopsis') or ''
+        artists = meta.get('communityArtists') or []
+        writers = [a.get('name') or '' for a in artists
+                   if 'ARTIST_WRITER' in (a.get('artistTypeList') or [])]
+        painters = [a.get('name') or '' for a in artists
+                    if 'ARTIST_PAINTER' in (a.get('artistTypeList') or [])]
+        # writer 가 없으면 아무 아티스트나 author 로
+        if not writers and artists:
+            writers = [a.get('name') or '' for a in artists]
+        tag_list = meta.get('curationTagList') or []
+        genres = [t.get('tagName') or '' for t in tag_list
+                  if str(t.get('curationType') or '').startswith('GENRE_')]
+        tags = [t.get('tagName') or '' for t in tag_list
+                if not str(t.get('curationType') or '').startswith('GENRE_')]
+        finished = meta.get('finished')
+        notes = '완결' if finished else ('연재중' if finished is False else '')
+
+        # 첫 회차 날짜 (가장 작은 no) — articles 가 있으면 거기서 추출
+        year = month = day = ''
+        if articles:
+            first = min(articles, key=lambda a: int(a.get('no') or 0))
+            sdate = (first.get('serviceDateDescription') or '').strip()
+            m = re.match(r'(\d{2})\.(\d{1,2})\.(\d{1,2})', sdate)
+            if m:
+                year = '20' + m.group(1)
+                month = m.group(2).zfill(2)
+                day = m.group(3).zfill(2)
+
+        return _INFO_XML.format(
+            title=_xml_escape(title),
+            desc=_xml_escape(synopsis),
+            author=_xml_escape(', '.join(w for w in writers if w)),
+            inker=_xml_escape(', '.join(p for p in painters if p)),
+            publisher=_xml_escape('네이버 웹툰'),
+            genre=_xml_escape(', '.join(g for g in genres if g)),
+            tags=_xml_escape(', '.join(t for t in tags if t)),
+            notes=_xml_escape(notes),
+            year=year, month=month, day=day,
+        )
+
+    # ---- 전 작품 메타 일괄 동기화 (UI 버튼) ----
+    def sync_metadata_all(self) -> dict:
+        """titles 리스트의 모든 작품에 대해 info.xml/cover.jpg 누락분 생성.
+
+        다운로드 폴더에 작품 폴더가 이미 있는 항목만 처리 (없는 작품은
+        만들지 않고 스킵 — 다운로드 전에 굳이 빈 폴더 만들 필요 없음).
+        완결 그룹(notice_subdir 아래) 도 동시에 점검.
+        """
+        P.logger.info('[basic] sync_metadata_all BEGIN titles=%s', self.items)
+        _auto_reset()
+        _auto_set(status='running', started_at=datetime.now().isoformat(),
+                  message='메타 동기화 시작', titles_total=len(self.items))
+        if not self.download_root:
+            _auto_set(status='error', finished_at=datetime.now().isoformat(),
+                      message='download_path 미설정')
+            return {'ret': 'fail', 'reason': 'no_download_path'}
+        if not self.cookies_json:
+            _auto_set(status='error', finished_at=datetime.now().isoformat(),
+                      message='cookies_json 미설정')
+            return {'ret': 'fail', 'reason': 'no_cookies'}
+        if not self.items:
+            _auto_set(status='error', finished_at=datetime.now().isoformat(),
+                      message='체크할 작품 미설정')
+            return {'ret': 'fail', 'reason': 'no_titles'}
+
+        try:
+            self.client = NaverToonClient(self.cookies_json, logger=P.logger)
+        except AuthRequiredError as e:
+            _auto_set(status='error', finished_at=datetime.now().isoformat(),
+                      message=f'쿠키 인증 실패: {e}')
+            return {'ret': 'fail', 'reason': 'auth', 'msg': str(e)}
+
+        summary = {'titles': len(self.items), 'info': 0, 'cover': 0,
+                   'skipped_no_folder': 0, 'failed': 0}
+        for raw in self.items:
+            _auto_set(current_title=raw, current_phase='sync_metadata',
+                      current_episode='', current_pages_done=0,
+                      current_pages_total=0)
+            try:
+                tid = NaverToonClient.extract_title_id(raw)
+                if tid is None:
+                    it = self.client.find_content(raw)
+                    if not it:
+                        summary['failed'] += 1
+                        continue
+                    tid = it['titleId']
+                    title_guess = it.get('titleName') or raw
+                else:
+                    title_guess = raw
+
+                meta = {}
+                try:
+                    meta = self.client.get_content(tid) or {}
+                except NaverToonError as e:
+                    P.logger.warning('[%s] meta 실패: %s', raw, e)
+                title_name = meta.get('titleName') or title_guess
+                _auto_set(current_title=title_name)
+
+                # main / complete 두 위치 모두 점검 — 있는 쪽에만 메타 채움
+                any_processed = False
+                for group in ('main', 'complete'):
+                    title_dir = self._title_dir(title_name, group=group)
+                    if not os.path.isdir(title_dir):
+                        continue
+                    any_processed = True
+                    # articles 는 첫 회차 날짜 산출용 — 폴더가 있을 때만 시도
+                    articles = None
+                    try:
+                        articles = self.client.get_episodes_all(tid)
+                    except NaverToonError as e:
+                        P.logger.warning('[%s] 회차 조회 실패 (날짜 비움): %s',
+                                         title_name, e)
+                    r = self._ensure_title_metadata(title_name, tid, meta,
+                                                   articles, group=group)
+                    if r['info']:
+                        summary['info'] += 1
+                    if r['cover']:
+                        summary['cover'] += 1
+                if not any_processed:
+                    summary['skipped_no_folder'] += 1
+            except Exception as e:
+                import traceback
+                P.logger.error('[sync_metadata] %r 예외: %s', raw, e)
+                P.logger.error(traceback.format_exc())
+                summary['failed'] += 1
+            _auto_set(titles_done=(summary['info'] + summary['cover']
+                                   + summary['skipped_no_folder']
+                                   + summary['failed']))
+
+        _auto_set(status='done', finished_at=datetime.now().isoformat(),
+                  current_title='', current_phase='', current_episode='',
+                  message=(f"메타 동기화 완료 — info {summary['info']}, "
+                           f"cover {summary['cover']}, "
+                           f"폴더없음 {summary['skipped_no_folder']}, "
+                           f"실패 {summary['failed']}"))
+        return {'ret': 'success', **summary}
 
     # ---- one episode ----
     def _download_one(self, title_name: str, title_id: int,
