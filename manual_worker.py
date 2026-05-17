@@ -10,6 +10,7 @@ from .client import (NaverToonClient, NaverToonError,
                      AuthRequiredError, NotReadableError)
 from .model import ModelNaverToonItem
 from .setup import *  # P, db, logger
+from . import worker as _wkr  # ensure_title_metadata 재사용
 
 
 def _safe_filename(s: str) -> str:
@@ -31,6 +32,9 @@ _state: Dict[str, Any] = {
     'completed': 0,
     'skipped': 0,
     'failed': 0,
+    # info.xml / cover.jpg 생성용 — analyze 시 보관 (UI 노출 안 함)
+    '_meta': None,
+    '_articles': None,
 }
 _cancel_flag = threading.Event()
 _thread: Optional[threading.Thread] = None
@@ -38,7 +42,8 @@ _thread: Optional[threading.Thread] = None
 
 def get_state() -> Dict[str, Any]:
     with _state_lock:
-        snap = {k: v for k, v in _state.items() if k != 'episodes'}
+        snap = {k: v for k, v in _state.items()
+                if k != 'episodes' and not k.startswith('_')}
         snap['episodes'] = [dict(e) for e in _state['episodes']]
         return snap
 
@@ -57,6 +62,7 @@ def _reset_state():
             'episodes': [], 'current_index': -1,
             'total_to_download': 0,
             'completed': 0, 'skipped': 0, 'failed': 0,
+            '_meta': None, '_articles': None,
         })
 
 
@@ -129,7 +135,8 @@ def analyze(url_or_id: str) -> Dict[str, Any]:
     _set(status='idle',
          message=f'분석 완료 — 전체 {len(all_eps)}개 중 다운로드 가능 {will_download}개',
          title_id=title_id, content_title=content_title,
-         episodes=episodes, total_to_download=will_download)
+         episodes=episodes, total_to_download=will_download,
+         _meta=meta, _articles=articles)
     P.logger.info('[manual] analyze END content=%r total=%d will_download=%d',
                   content_title, len(all_eps), will_download)
     return {
@@ -188,6 +195,19 @@ def _run(download_root: str):
                 title_id = _state['title_id']
                 content_title = _state['content_title']
                 episodes = list(_state['episodes'])
+                meta = _state.get('_meta') or {}
+                articles = _state.get('_articles')
+
+            # info.xml / cover.jpg — 첫 다운로드 전에 생성
+            try:
+                notice_subdir = (P.ModelSetting.get('notice_subdir')
+                                 or '완결').strip() or '완결'
+                _wkr.ensure_title_metadata(cli, download_root, content_title,
+                                           title_id, meta, articles,
+                                           group='main',
+                                           notice_subdir=notice_subdir)
+            except Exception as e:
+                P.logger.warning('[manual] ensure_title_metadata 실패: %s', e)
 
             for idx, ep in enumerate(episodes):
                 if _cancel_flag.is_set():
