@@ -50,6 +50,109 @@ _INFO_XML = '''<?xml version="1.0"?>
 </ComicInfo>'''
 
 
+# ---- 메타 헬퍼 (모듈 레벨 — auto/manual worker 모두에서 재사용) ----
+def title_dir_for(download_root: str, title_name: str,
+                  group: str = 'main', notice_subdir: str = '완결') -> str:
+    c_folder = _safe_filename(title_name)
+    if group == 'complete':
+        return os.path.join(download_root,
+                            _safe_filename(notice_subdir), c_folder)
+    return os.path.join(download_root, c_folder)
+
+
+def build_info_xml(title_name: str, meta: Dict[str, Any],
+                   articles: Optional[List[Dict[str, Any]]] = None) -> str:
+    """네이버 작품 메타 → ComicInfo XML. 부족한 필드는 빈 값."""
+    title = (meta.get('titleName') if meta else None) or title_name or ''
+    synopsis = (meta.get('synopsis') if meta else '') or ''
+    artists = (meta.get('communityArtists') if meta else None) or []
+    writers = [a.get('name') or '' for a in artists
+               if 'ARTIST_WRITER' in (a.get('artistTypeList') or [])]
+    painters = [a.get('name') or '' for a in artists
+                if 'ARTIST_PAINTER' in (a.get('artistTypeList') or [])]
+    if not writers and artists:
+        writers = [a.get('name') or '' for a in artists]
+    tag_list = (meta.get('curationTagList') if meta else None) or []
+    genres = [t.get('tagName') or '' for t in tag_list
+              if str(t.get('curationType') or '').startswith('GENRE_')]
+    tags = [t.get('tagName') or '' for t in tag_list
+            if not str(t.get('curationType') or '').startswith('GENRE_')]
+    finished = meta.get('finished') if meta else None
+    notes = '완결' if finished else ('연재중' if finished is False else '')
+
+    year = month = day = ''
+    if articles:
+        first = min(articles, key=lambda a: int(a.get('no') or 0))
+        sdate = (first.get('serviceDateDescription') or '').strip()
+        m = re.match(r'(\d{2})\.(\d{1,2})\.(\d{1,2})', sdate)
+        if m:
+            year = '20' + m.group(1)
+            month = m.group(2).zfill(2)
+            day = m.group(3).zfill(2)
+
+    return _INFO_XML.format(
+        title=_xml_escape(title),
+        desc=_xml_escape(synopsis),
+        author=_xml_escape(', '.join(w for w in writers if w)),
+        inker=_xml_escape(', '.join(p for p in painters if p)),
+        publisher=_xml_escape('네이버 웹툰'),
+        genre=_xml_escape(', '.join(g for g in genres if g)),
+        tags=_xml_escape(', '.join(t for t in tags if t)),
+        notes=_xml_escape(notes),
+        year=year, month=month, day=day,
+    )
+
+
+def ensure_title_metadata(client, download_root: str,
+                          title_name: str, title_id: int,
+                          meta: Dict[str, Any],
+                          articles: Optional[List[Dict[str, Any]]] = None,
+                          group: str = 'main',
+                          notice_subdir: str = '완결') -> Dict[str, Any]:
+    """작품 폴더에 info.xml / cover.jpg 가 없으면 생성.
+
+    - 폴더가 없으면 만든다.
+    - meta 가 부족해도 있는 정보만 채워서 info.xml 생성.
+    - 커버 URL 이 없거나 client 가 없으면 cover.jpg 는 스킵.
+    반환: {'info': bool, 'cover': bool, 'dir': str}
+    """
+    result = {'info': False, 'cover': False, 'dir': ''}
+    title_dir = title_dir_for(download_root, title_name, group, notice_subdir)
+    result['dir'] = title_dir
+    try:
+        os.makedirs(title_dir, exist_ok=True)
+    except Exception as e:
+        P.logger.warning('[%s] 작품 폴더 생성 실패: %s', title_name, e)
+        return result
+
+    info_path = os.path.join(title_dir, 'info.xml')
+    if not os.path.exists(info_path):
+        try:
+            xml = build_info_xml(title_name, meta or {}, articles)
+            with open(info_path, 'w', encoding='utf-8') as fp:
+                fp.write(xml)
+            P.logger.info('[%s] info.xml 생성', title_name)
+            result['info'] = True
+        except Exception as e:
+            P.logger.warning('[%s] info.xml 생성 실패: %s', title_name, e)
+
+    cover_path = os.path.join(title_dir, 'cover.jpg')
+    if not os.path.exists(cover_path):
+        url = ((meta or {}).get('sharedThumbnailUrl')
+               or (meta or {}).get('posterThumbnailUrl')
+               or (meta or {}).get('thumbnailUrl'))
+        if url and client is not None:
+            try:
+                data = client.download_image(url, title_id)
+                with open(cover_path, 'wb') as fp:
+                    fp.write(data)
+                P.logger.info('[%s] cover.jpg 생성', title_name)
+                result['cover'] = True
+            except Exception as e:
+                P.logger.warning('[%s] cover.jpg 생성 실패: %s', title_name, e)
+    return result
+
+
 # ---- 자동 다운로드 진행 상태 (싱글톤) ----
 _auto_state_lock = threading.Lock()
 _auto_state: Dict[str, Any] = {
@@ -480,105 +583,19 @@ class Worker:
                 downloaded += 1
         return 'downloaded' if downloaded else 'skipped'
 
-    # ---- 작품 폴더 메타 (info.xml / cover.jpg) ----
+    # ---- 작품 폴더 메타 (info.xml / cover.jpg) — Worker 인스턴스용 wrapper ----
     def _title_dir(self, title_name: str, group: str = 'main') -> str:
-        c_folder = _safe_filename(title_name)
-        if group == 'complete':
-            return os.path.join(self.download_root,
-                                _safe_filename(self.notice_subdir), c_folder)
-        return os.path.join(self.download_root, c_folder)
+        return title_dir_for(self.download_root, title_name, group,
+                             self.notice_subdir)
 
     def _ensure_title_metadata(self, title_name: str, title_id: int,
                                meta: Dict[str, Any],
                                articles: Optional[List[Dict[str, Any]]] = None,
-                               group: str = 'main') -> Dict[str, bool]:
-        """작품 폴더에 info.xml / cover.jpg 가 없으면 생성.
-
-        - 폴더가 아직 없으면 만든다.
-        - meta 가 부족해도 있는 정보만으로 info.xml 생성 (빈 필드는 빈 태그).
-        - cover URL 이 없으면 cover.jpg 는 스킵.
-        반환: {'info': True/False, 'cover': True/False, 'dir': path}
-        """
-        result = {'info': False, 'cover': False, 'dir': ''}
-        title_dir = self._title_dir(title_name, group=group)
-        result['dir'] = title_dir
-        try:
-            os.makedirs(title_dir, exist_ok=True)
-        except Exception as e:
-            P.logger.warning('[%s] 작품 폴더 생성 실패: %s', title_name, e)
-            return result
-
-        info_path = os.path.join(title_dir, 'info.xml')
-        if not os.path.exists(info_path):
-            try:
-                xml = self._build_info_xml(title_name, meta, articles)
-                with open(info_path, 'w', encoding='utf-8') as fp:
-                    fp.write(xml)
-                P.logger.info('[%s] info.xml 생성', title_name)
-                result['info'] = True
-            except Exception as e:
-                P.logger.warning('[%s] info.xml 생성 실패: %s', title_name, e)
-
-        cover_path = os.path.join(title_dir, 'cover.jpg')
-        if not os.path.exists(cover_path):
-            url = (meta.get('sharedThumbnailUrl')
-                   or meta.get('posterThumbnailUrl')
-                   or meta.get('thumbnailUrl'))
-            if url and self.client is not None:
-                try:
-                    data = self.client.download_image(url, title_id)
-                    with open(cover_path, 'wb') as fp:
-                        fp.write(data)
-                    P.logger.info('[%s] cover.jpg 생성', title_name)
-                    result['cover'] = True
-                except Exception as e:
-                    P.logger.warning('[%s] cover.jpg 생성 실패: %s',
-                                     title_name, e)
-        return result
-
-    def _build_info_xml(self, title_name: str, meta: Dict[str, Any],
-                        articles: Optional[List[Dict[str, Any]]] = None) -> str:
-        """네이버 작품 메타 → ComicInfo XML. 부족한 필드는 빈 값."""
-        title = meta.get('titleName') or title_name or ''
-        synopsis = meta.get('synopsis') or ''
-        artists = meta.get('communityArtists') or []
-        writers = [a.get('name') or '' for a in artists
-                   if 'ARTIST_WRITER' in (a.get('artistTypeList') or [])]
-        painters = [a.get('name') or '' for a in artists
-                    if 'ARTIST_PAINTER' in (a.get('artistTypeList') or [])]
-        # writer 가 없으면 아무 아티스트나 author 로
-        if not writers and artists:
-            writers = [a.get('name') or '' for a in artists]
-        tag_list = meta.get('curationTagList') or []
-        genres = [t.get('tagName') or '' for t in tag_list
-                  if str(t.get('curationType') or '').startswith('GENRE_')]
-        tags = [t.get('tagName') or '' for t in tag_list
-                if not str(t.get('curationType') or '').startswith('GENRE_')]
-        finished = meta.get('finished')
-        notes = '완결' if finished else ('연재중' if finished is False else '')
-
-        # 첫 회차 날짜 (가장 작은 no) — articles 가 있으면 거기서 추출
-        year = month = day = ''
-        if articles:
-            first = min(articles, key=lambda a: int(a.get('no') or 0))
-            sdate = (first.get('serviceDateDescription') or '').strip()
-            m = re.match(r'(\d{2})\.(\d{1,2})\.(\d{1,2})', sdate)
-            if m:
-                year = '20' + m.group(1)
-                month = m.group(2).zfill(2)
-                day = m.group(3).zfill(2)
-
-        return _INFO_XML.format(
-            title=_xml_escape(title),
-            desc=_xml_escape(synopsis),
-            author=_xml_escape(', '.join(w for w in writers if w)),
-            inker=_xml_escape(', '.join(p for p in painters if p)),
-            publisher=_xml_escape('네이버 웹툰'),
-            genre=_xml_escape(', '.join(g for g in genres if g)),
-            tags=_xml_escape(', '.join(t for t in tags if t)),
-            notes=_xml_escape(notes),
-            year=year, month=month, day=day,
-        )
+                               group: str = 'main') -> Dict[str, Any]:
+        return ensure_title_metadata(self.client, self.download_root,
+                                     title_name, title_id, meta, articles,
+                                     group=group,
+                                     notice_subdir=self.notice_subdir)
 
     # ---- 전 작품 메타 일괄 동기화 (UI 버튼) ----
     def sync_metadata_all(self) -> dict:
