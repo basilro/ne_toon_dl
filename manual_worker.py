@@ -86,9 +86,11 @@ def analyze(url_or_id: str) -> Dict[str, Any]:
     cookies_json = (P.ModelSetting.get('cookies_json') or '').strip()
     if not cookies_json:
         return {'ret': 'fail', 'msg': '쿠키 미설정 — 설정 페이지에서 쿠키 주입 후 다시 시도'}
+    proxy_url = NaverToonClient.resolve_proxy(
+        P.ModelSetting.get('use_proxy'), P.ModelSetting.get('proxy_url'))
 
     try:
-        cli = NaverToonClient(cookies_json, logger=P.logger)
+        cli = NaverToonClient(cookies_json, logger=P.logger, proxy_url=proxy_url)
     except AuthRequiredError as e:
         return {'ret': 'fail', 'msg': f'쿠키 인증 실패: {e}'}
     except Exception as e:
@@ -190,7 +192,11 @@ def _run(download_root: str):
     with F.app.app_context():
         try:
             cookies_json = (P.ModelSetting.get('cookies_json') or '').strip()
-            cli = NaverToonClient(cookies_json, logger=P.logger)
+            proxy_url = NaverToonClient.resolve_proxy(
+                P.ModelSetting.get('use_proxy'),
+                P.ModelSetting.get('proxy_url'))
+            cli = NaverToonClient(cookies_json, logger=P.logger,
+                                  proxy_url=proxy_url)
             with _state_lock:
                 title_id = _state['title_id']
                 content_title = _state['content_title']

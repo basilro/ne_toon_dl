@@ -31,6 +31,8 @@ class ModuleBasic(PluginModuleBase):
             'notice_auto_dl': 'False',         # 매월 유료화 공지 자동 다운로드
             'notice_subdir': '완결',            # 완결/유료화 작품 저장 하위 폴더
             'last_paid_notice_id': '0',        # 마지막 처리한 유료화 공지 noticeId
+            'use_proxy': 'False',              # 프록시 사용 여부
+            'proxy_url': '',                   # warproxy 등. use_proxy=True + 값 있을 때만 사용
             'auto_start': 'False',
         }
         self.web_list_model = ModelNaverToonItem
@@ -53,7 +55,11 @@ class ModuleBasic(PluginModuleBase):
             if command == 'verify_cookies':
                 from .client import NaverToonClient, AuthRequiredError
                 try:
-                    cli = NaverToonClient(P.ModelSetting.get('cookies_json'), logger=P.logger)
+                    proxy_url = NaverToonClient.resolve_proxy(
+                        P.ModelSetting.get('use_proxy'),
+                        P.ModelSetting.get('proxy_url'))
+                    cli = NaverToonClient(P.ModelSetting.get('cookies_json'),
+                                          logger=P.logger, proxy_url=proxy_url)
                     ok = cli.verify()
                     ret = {'ret': 'success' if ok else 'fail',
                            'msg': '쿠키 유효 (로그인 상태 확인됨)' if ok else '쿠키 만료/무효 — 재주입 필요'}
