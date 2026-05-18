@@ -1,5 +1,5 @@
 title: "ne_toon_dl"
-version: "0.1.0"
+version: "0.1.1"
 package_name: "ne_toon_dl"
 developer: "basilro"
 description: "네이버웹툰 무료 회차 자동 다운로드"
