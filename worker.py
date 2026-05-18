@@ -210,6 +210,8 @@ class Worker:
         self.notify_download_url = (self.cfg.get('notify_webhook_download') or '').strip()
         self.notice_auto_dl = (self.cfg.get('notice_auto_dl') or 'False') == 'True'
         self.notice_subdir = (self.cfg.get('notice_subdir') or '완결').strip() or '완결'
+        self.proxy_url = NaverToonClient.resolve_proxy(
+            self.cfg.get('use_proxy'), self.cfg.get('proxy_url'))
         self.client: Optional[NaverToonClient] = None
         self.completed_items: List[Dict[str, Any]] = []  # 알림용 누적
 
@@ -242,7 +244,8 @@ class Worker:
             return {'ret': 'fail', 'reason': 'no_titles'}
 
         try:
-            self.client = NaverToonClient(self.cookies_json, logger=P.logger)
+            self.client = NaverToonClient(self.cookies_json, logger=P.logger,
+                                          proxy_url=self.proxy_url)
         except AuthRequiredError as e:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message=f'쿠키 인증 실패: {e}')
@@ -410,7 +413,8 @@ class Worker:
             return {'ret': 'fail', 'reason': 'no_cookies'}
 
         try:
-            self.client = NaverToonClient(self.cookies_json, logger=P.logger)
+            self.client = NaverToonClient(self.cookies_json, logger=P.logger,
+                                          proxy_url=self.proxy_url)
         except AuthRequiredError as e:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message=f'쿠키 인증 실패: {e}')
@@ -623,7 +627,8 @@ class Worker:
             return {'ret': 'fail', 'reason': 'no_titles'}
 
         try:
-            self.client = NaverToonClient(self.cookies_json, logger=P.logger)
+            self.client = NaverToonClient(self.cookies_json, logger=P.logger,
+                                          proxy_url=self.proxy_url)
         except AuthRequiredError as e:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message=f'쿠키 인증 실패: {e}')

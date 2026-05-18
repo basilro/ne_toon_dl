@@ -35,8 +35,9 @@ class NotReadableError(NaverToonError):
 
 class NaverToonClient:
 
-    def __init__(self, cookies_json: str, logger=None):
+    def __init__(self, cookies_json: str, logger=None, proxy_url: str = None):
         self.logger = logger
+        self._proxy_url = (proxy_url or '').strip() or None
         self._parse_cookies(cookies_json)
 
     # ---- 내부 ----
@@ -75,6 +76,8 @@ class NaverToonClient:
             'Accept-Language': 'ko',
             'Referer': WEB + '/',
         })
+        if self._proxy_url:
+            s.proxies = {'http': self._proxy_url, 'https': self._proxy_url}
         for c in self.cookies:
             try:
                 s.cookies.set(c['name'], c['value'],
@@ -473,3 +476,14 @@ class NaverToonClient:
     @staticmethod
     def episode_no(article: Dict) -> int:
         return int(article.get('no') or 0)
+
+    @staticmethod
+    def resolve_proxy(use_proxy, proxy_url) -> str:
+        """설정값 → 실제 사용할 프록시 URL. use_proxy=True 이고 URL 있을 때만."""
+        try:
+            enabled = (str(use_proxy or 'False').strip() == 'True')
+        except Exception:
+            enabled = False
+        if not enabled:
+            return ''
+        return (proxy_url or '').strip()
