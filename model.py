@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, desc, or_
 
 from .setup import *
 
@@ -41,3 +41,23 @@ class ModelNaverToonItem(ModelBase):
         self.status = 'pending'
         self.downloaded_count = 0
         self.total_bytes = 0
+
+    @classmethod
+    def make_query(cls, req, order='desc', search='', option1='all', option2='all'):
+        # 템플릿이 보내는 필드명은 option / search_word 인데 base.web_list 는
+        # option1 / keyword 로 읽어서 search/option1 인자는 항상 'all'/'' 로 들어옴.
+        # → req.form 에서 직접 읽어서 적용.
+        query = db.session.query(cls)
+        opt = (req.form.get('option') or option1 or 'all').strip()
+        kw = (req.form.get('search_word') or req.form.get('keyword') or search or '').strip()
+        if opt and opt != 'all':
+            query = query.filter(cls.status == opt)
+        if kw:
+            pat = f'%{kw}%'
+            query = query.filter(or_(cls.title_name.like(pat),
+                                     cls.episode_title.like(pat)))
+        if order == 'desc':
+            query = query.order_by(desc(cls.id))
+        else:
+            query = query.order_by(cls.id)
+        return query
