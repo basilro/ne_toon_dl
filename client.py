@@ -221,11 +221,15 @@ class NaverToonClient:
             titles.append({'title_id': tid, 'title_name': name})
         return conv_date, titles
 
-    def find_latest_paid_notice(self, max_pages: int = 2
-                                ) -> Optional[Dict[str, Any]]:
-        """공지 목록에서 가장 최근 '유료화 전환' 공지 1개 반환.
+    def find_paid_notices(self, max_pages: int = 2
+                          ) -> List[Dict[str, Any]]:
+        """공지 목록에서 '유료화 전환' 공지를 모두 찾아 최신순 정렬해 반환.
 
-        반환: {noticeId, subject, year, month, registerDate(ms)} or None.
+        반환: [{noticeId, subject, year, month, registerDate(ms)}, ...]
+              (year, month) DESC → registerDate DESC → noticeId DESC.
+
+        다음 달 공지가 미리 올라와 있어도 호출측이 '이번 달' 공지를 골라 쓸 수
+        있도록 단일 항목이 아닌 전체 목록을 돌려준다.
         """
         candidates: List[Dict[str, Any]] = []
         for page in range(1, max_pages + 1):
@@ -248,13 +252,19 @@ class NaverToonClient:
             # 1페이지만으로도 보통 충분
             if candidates:
                 break
-        if not candidates:
-            return None
-        # 가장 최신: (year, month) DESC → registerDate DESC → noticeId DESC
         candidates.sort(key=lambda c: (c['year'], c['month'],
                                        c['registerDate'], c['noticeId']),
                         reverse=True)
-        return candidates[0]
+        return candidates
+
+    def find_latest_paid_notice(self, max_pages: int = 2
+                                ) -> Optional[Dict[str, Any]]:
+        """가장 최근 '유료화 전환' 공지 1개 반환 (하위호환용).
+
+        반환: {noticeId, subject, year, month, registerDate(ms)} or None.
+        """
+        cands = self.find_paid_notices(max_pages=max_pages)
+        return cands[0] if cands else None
 
     # ---- 검색 / 메타 ----
     def search_all(self, keyword: str) -> Dict[str, Any]:
