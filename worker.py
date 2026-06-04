@@ -306,7 +306,9 @@ class Worker:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message='cookies_json 미설정')
             return {'ret': 'fail', 'reason': 'no_cookies'}
-        if not self.items:
+        # 공지 자동 다운(notice_auto_dl)만 쓰고 watchlist 가 비어있는 구성도 허용.
+        # 이 경우 per-title 루프는 건너뛰고 아래 공지 처리까지 진행한다.
+        if not self.items and not self.notice_auto_dl:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message='체크할 작품 미설정')
             return {'ret': 'fail', 'reason': 'no_titles'}
@@ -368,6 +370,8 @@ class Worker:
                 import traceback
                 P.logger.error('notice 처리 예외: %s', e)
                 P.logger.error(traceback.format_exc())
+        else:
+            P.logger.info('[basic] notice_auto_dl Off — 공지 자동 다운 skip')
 
         # ---- 다운로드 완료 요약 알림 (받은 게 있을 때만) ----
         if self.completed_items and self.notify_download_url:
@@ -528,18 +532,21 @@ class Worker:
         """
         _auto_set(current_phase='fetch_notice', current_title='[유료화 공지]',
                   current_episode='', current_pages_done=0, current_pages_total=0)
-        latest = self.client.find_latest_paid_notice()
-        if latest is None:
+        today = date.today()
+        cands = self.client.find_paid_notices()
+        if not cands:
             P.logger.info('[notice] 유료화 전환 공지 없음')
             return 0
 
-        today = date.today()
-        # 1) "이번 달" 공지만 처리 — 4월/지난달 공지는 보지 않음.
-        if latest['year'] != today.year or latest['month'] != today.month:
-            P.logger.info('[notice] 최신 공지가 이번 달이 아님 — skip '
-                          '(공지 %d년 %d월, 오늘 %d년 %d월)',
-                          latest['year'], latest['month'],
-                          today.year, today.month)
+        # "이번 달" 공지를 고른다 — 다음 달 공지가 먼저 올라와 있어도 가려지지 않게.
+        latest = next((c for c in cands if c['year'] == today.year
+                       and c['month'] == today.month), None)
+        if latest is None:
+            newest = cands[0]
+            P.logger.info('[notice] 이번 달(%d년 %d월) 유료화 공지 없음 — skip '
+                          '(가장 최근 공지 %d년 %d월)',
+                          today.year, today.month,
+                          newest['year'], newest['month'])
             return 0
 
         try:
@@ -579,6 +586,7 @@ class Worker:
             return 0
 
         processed = 0
+        failed_cnt = 0
         for it in items:
             title_id = it['title_id']
             title_name = it['title_name']
@@ -594,17 +602,25 @@ class Worker:
                     summary['skipped'] += 1; _auto_summary_inc('skipped')
                 else:
                     summary['failed'] += 1; _auto_summary_inc('failed')
+                    failed_cnt += 1
             except Exception as e:
                 P.logger.warning('[notice] %s 처리 실패: %s', title_name, e)
                 summary['failed'] += 1; _auto_summary_inc('failed')
+                failed_cnt += 1
 
-        # 정상 처리 끝 → 같은 공지 다시 안 돌게 기록
-        try:
-            P.ModelSetting.set('last_paid_notice_id', str(latest['noticeId']))
-            P.logger.info('[notice] last_paid_notice_id=%s 저장',
-                          latest['noticeId'])
-        except Exception as e:
-            P.logger.warning('[notice] last_paid_notice_id 저장 실패: %s', e)
+        # 실패가 하나도 없을 때만 '처리 완료'로 기록 — 실패분은 다음 실행에서 재시도.
+        # (이미 받은 회차는 DB 중복방지로 skip 되므로 재시도 비용은 낮다.)
+        # 실패가 있는데도 기록해 버리면 같은 공지가 영구히 skip 되는 사고가 난다.
+        if failed_cnt == 0:
+            try:
+                P.ModelSetting.set('last_paid_notice_id', str(latest['noticeId']))
+                P.logger.info('[notice] last_paid_notice_id=%s 저장',
+                              latest['noticeId'])
+            except Exception as e:
+                P.logger.warning('[notice] last_paid_notice_id 저장 실패: %s', e)
+        else:
+            P.logger.info('[notice] 실패 %d건 — last_paid_notice_id 미기록 '
+                          '(다음 실행에서 재시도)', failed_cnt)
         return processed
 
     def _process_paid_title(self, title_id: int, title_name: str) -> str:
