@@ -180,6 +180,12 @@ def start() -> Dict[str, Any]:
     if not download_root:
         return {'ret': 'fail', 'msg': 'download_path 미설정'}
 
+    # 전역 락 — 자동/공지/압축/메타 작업과 절대 겹치지 않게 (회차 폴더 zip+삭제
+    # 와 다운로드가 겹쳐 폴더가 사라지는 ENOENT 사고 방지). _run 의 finally 에서 해제.
+    if not _wkr.try_acquire_run_lock():
+        return {'ret': 'fail',
+                'msg': '자동 다운로드/공지/압축 등 다른 작업이 실행 중 — 끝난 뒤 다시'}
+
     _cancel_flag.clear()
     _set(status='running', message='다운로드 시작', started_at=datetime.now().isoformat(),
          finished_at=None, current_index=-1, completed=0, skipped=0, failed=0)
@@ -245,6 +251,8 @@ def _run(download_root: str):
             P.logger.error(traceback.format_exc())
             _set(status='error', finished_at=datetime.now().isoformat(),
                  message=f'에러: {e}')
+        finally:
+            _wkr.release_run_lock()
 
 
 def _ep_update(idx: int, **kw):
