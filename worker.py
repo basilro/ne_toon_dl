@@ -1,4 +1,5 @@
 """스케줄 1회 실행 단위 — 작품 리스트를 돌면서 무료 회차 다운로드."""
+import functools
 import os
 import re
 import threading
@@ -266,6 +267,44 @@ def _auto_summary_inc(key: str, delta: int = 1):
         _auto_state['summary'][key] = _auto_state['summary'].get(key, 0) + delta
 
 
+# ---- 전역 상호배제 락 ----
+# 다운로드(자동/공지/수동)·압축·메타동기화가 절대 동시에 돌지 않게 한다.
+# 한쪽이 회차 폴더를 zip+삭제(rmtree)하는 사이 다른 쪽이 같은 폴더에 쓰다가
+# 폴더가 사라지는 사고(ENOENT 무더기)를 막는다. 09시 스케줄러 run() 에는 가드가
+# 아예 없었고, 버튼 액션들은 click 시점의 status 만 봐서(check-then-act) 서로
+# 겹칠 수 있었다 — 예: 실행이 긴 공지 다운로드 위에 09시 스케줄러가 또 run().
+_run_lock = threading.Lock()
+
+
+def try_acquire_run_lock() -> bool:
+    """수동 워커 등 외부에서 전역 락을 비차단으로 잡는다. 성공 시 True."""
+    return _run_lock.acquire(blocking=False)
+
+
+def release_run_lock() -> None:
+    try:
+        _run_lock.release()
+    except RuntimeError:
+        pass
+
+
+def _exclusive(fn):
+    """전역 락을 잡고 메서드를 실행. 이미 다른 작업이 돌고 있으면 즉시 busy 반환.
+
+    busy 일 때는 _auto_reset() 등으로 진행 중인 작업의 상태를 건드리지 않는다.
+    """
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        if not _run_lock.acquire(blocking=False):
+            P.logger.info('[basic] %s skip — 다른 작업이 이미 실행 중', fn.__name__)
+            return {'ret': 'fail', 'reason': 'busy', 'msg': '다른 작업 실행 중'}
+        try:
+            return fn(self, *args, **kwargs)
+        finally:
+            _run_lock.release()
+    return wrapper
+
+
 class Worker:
 
     def __init__(self):
@@ -293,6 +332,7 @@ class Worker:
         return out
 
     # ---- public ----
+    @_exclusive
     def run(self) -> dict:
         P.logger.info('[basic] Worker.run BEGIN items=%s', self.items)
         _auto_reset()
@@ -464,6 +504,7 @@ class Worker:
         return 'downloaded' if downloaded_count else 'skipped'
 
     # ---- public: 공지만 실행 (UI '공지 즉시 실행' 버튼) ----
+    @_exclusive
     def run_notice_only(self) -> dict:
         """공지 처리만 실행 — 메인 작품 다운로드 단계는 건너뜀.
 
@@ -686,6 +727,7 @@ class Worker:
                                      notice_subdir=self.notice_subdir)
 
     # ---- 전 작품 메타 일괄 동기화 (UI 버튼) ----
+    @_exclusive
     def sync_metadata_all(self) -> dict:
         """titles 리스트의 모든 작품에 대해 info.xml/cover.jpg 누락분 생성.
 
@@ -784,6 +826,7 @@ class Worker:
         return {'ret': 'success', **summary}
 
     # ---- 회차 폴더 일괄 압축 (UI 버튼) ----
+    @_exclusive
     def compress_all(self) -> dict:
         """download_path 아래의 모든 회차 폴더를 ZIP 으로 압축.
 
