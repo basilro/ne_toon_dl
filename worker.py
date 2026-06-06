@@ -128,6 +128,53 @@ def title_dir_for(download_root: str, title_name: str,
     return os.path.join(download_root, c_folder)
 
 
+def discover_title_folders(download_root: str,
+                           notice_subdir: str = '완결',
+                           logger=None) -> List[str]:
+    """download_root 아래 실제로 존재하는 작품 폴더명을 수집.
+
+    - 최상위 디렉터리 = main 그룹 작품 폴더 (notice_subdir 폴더 자체는 제외)
+    - notice_subdir(완결) 폴더 안의 하위 디렉터리 = complete 그룹 작품 폴더
+    반환: 작품 폴더명(=작품명의 safe 버전) 리스트, 중복 제거, 정렬.
+
+    메타 동기화 버튼이 watchlist(설정 'titles') 비어 있어도 동작하도록,
+    디스크에 이미 받아둔 작품을 대상으로 삼기 위한 헬퍼.
+    """
+    found: List[str] = []
+    seen = set()
+    root = (download_root or '').strip()
+    if not root or not os.path.isdir(root):
+        return found
+    notice = _safe_filename(notice_subdir or '완결')
+
+    def _add(name: str) -> None:
+        if name and name not in seen:
+            seen.add(name)
+            found.append(name)
+
+    try:
+        for name in os.listdir(root):
+            full = os.path.join(root, name)
+            if not os.path.isdir(full):
+                continue
+            if name == notice:
+                # 완결 그룹 — 한 단계 더 내려가 작품 폴더 수집
+                try:
+                    for sub in os.listdir(full):
+                        if os.path.isdir(os.path.join(full, sub)):
+                            _add(sub)
+                except OSError as e:
+                    if logger:
+                        logger.warning('[basic] 완결 폴더 스캔 실패: %s', e)
+                continue
+            _add(name)
+    except OSError as e:
+        if logger:
+            logger.warning('[basic] 다운로드 폴더 스캔 실패: %s', e)
+    found.sort()
+    return found
+
+
 def build_info_xml(title_name: str, meta: Dict[str, Any],
                    articles: Optional[List[Dict[str, Any]]] = None) -> str:
     """네이버 작품 메타 → ComicInfo XML. 부족한 필드는 빈 값."""
@@ -729,16 +776,31 @@ class Worker:
     # ---- 전 작품 메타 일괄 동기화 (UI 버튼) ----
     @_exclusive
     def sync_metadata_all(self) -> dict:
-        """titles 리스트의 모든 작품에 대해 info.xml/cover.jpg 누락분 생성.
+        """다운로드 폴더의 모든 작품에 대해 info.xml/cover.jpg 누락분 생성.
 
+        대상 = 설정 watchlist('titles') + download_path 를 스캔해 찾은 작품 폴더.
+        → watchlist 가 비어 있어도 이미 받아둔 작품이 있으면 메타를 채운다.
         다운로드 폴더에 작품 폴더가 이미 있는 항목만 처리 (없는 작품은
         만들지 않고 스킵 — 다운로드 전에 굳이 빈 폴더 만들 필요 없음).
         완결 그룹(notice_subdir 아래) 도 동시에 점검.
         """
-        P.logger.info('[basic] sync_metadata_all BEGIN titles=%s', self.items)
+        # 대상 = 설정 watchlist(self.items) + 다운로드 폴더에 실제 존재하는 작품 폴더.
+        # watchlist 가 비어 있어도 디스크에 받아둔 작품이 있으면 메타를 채운다.
+        disk_titles = discover_title_folders(self.download_root,
+                                             self.notice_subdir,
+                                             logger=P.logger)
+        targets: List[str] = list(self.items)
+        seen = set(targets)
+        for name in disk_titles:
+            if name not in seen:
+                seen.add(name)
+                targets.append(name)
+
+        P.logger.info('[basic] sync_metadata_all BEGIN watchlist=%s disk=%s '
+                      'targets=%d', self.items, disk_titles, len(targets))
         _auto_reset()
         _auto_set(status='running', started_at=datetime.now().isoformat(),
-                  message='메타 동기화 시작', titles_total=len(self.items))
+                  message='메타 동기화 시작', titles_total=len(targets))
         if not self.download_root:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message='download_path 미설정')
@@ -747,9 +809,9 @@ class Worker:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message='cookies_json 미설정')
             return {'ret': 'fail', 'reason': 'no_cookies'}
-        if not self.items:
+        if not targets:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
-                      message='체크할 작품 미설정')
+                      message='동기화할 작품 없음 (watchlist 비어있고 다운로드 폴더에도 작품 폴더 없음)')
             return {'ret': 'fail', 'reason': 'no_titles'}
 
         try:
@@ -760,9 +822,9 @@ class Worker:
                       message=f'쿠키 인증 실패: {e}')
             return {'ret': 'fail', 'reason': 'auth', 'msg': str(e)}
 
-        summary = {'titles': len(self.items), 'info': 0, 'cover': 0,
+        summary = {'titles': len(targets), 'info': 0, 'cover': 0,
                    'skipped_no_folder': 0, 'failed': 0}
-        for raw in self.items:
+        for raw in targets:
             _auto_set(current_title=raw, current_phase='sync_metadata',
                       current_episode='', current_pages_done=0,
                       current_pages_total=0)
