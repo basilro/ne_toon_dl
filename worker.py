@@ -128,50 +128,61 @@ def title_dir_for(download_root: str, title_name: str,
     return os.path.join(download_root, c_folder)
 
 
+def _title_search_key(name: str) -> str:
+    """폴더명에서 검색용 제목 추출.
+
+    다운로드 폴더명이 '제목 [작가 ／ 작가2]' 처럼 끝에 작가 블록이 붙는
+    경우가 있어, 네이버 제목 검색 전에 끝의 ' [ ... ]' 한 덩어리를 제거한다.
+    제거 결과가 비면 원본을 그대로 쓴다.
+    """
+    base = re.sub(r'\s*\[[^\[\]]*\]\s*$', '', name or '').strip()
+    return base or (name or '').strip()
+
+
 def discover_title_folders(download_root: str,
                            notice_subdir: str = '완결',
-                           logger=None) -> List[str]:
-    """download_root 아래 실제로 존재하는 작품 폴더명을 수집.
+                           logger=None) -> List[Tuple[str, str]]:
+    """download_root 아래 실제로 존재하는 작품 폴더를 수집.
 
     - 최상위 디렉터리 = main 그룹 작품 폴더 (notice_subdir 폴더 자체는 제외)
     - notice_subdir(완결) 폴더 안의 하위 디렉터리 = complete 그룹 작품 폴더
-    반환: 작품 폴더명(=작품명의 safe 버전) 리스트, 중복 제거, 정렬.
+    반환: [(group, folder_name), ...] (group ∈ 'main'|'complete'), 폴더명 정렬.
 
     메타 동기화 버튼이 watchlist(설정 'titles') 비어 있어도 동작하도록,
     디스크에 이미 받아둔 작품을 대상으로 삼기 위한 헬퍼.
     """
-    found: List[str] = []
+    found: List[Tuple[str, str]] = []
     seen = set()
     root = (download_root or '').strip()
     if not root or not os.path.isdir(root):
         return found
     notice = _safe_filename(notice_subdir or '완결')
 
-    def _add(name: str) -> None:
-        if name and name not in seen:
-            seen.add(name)
-            found.append(name)
+    def _add(group: str, name: str) -> None:
+        key = (group, name)
+        if name and key not in seen:
+            seen.add(key)
+            found.append((group, name))
 
     try:
-        for name in os.listdir(root):
+        for name in sorted(os.listdir(root)):
             full = os.path.join(root, name)
             if not os.path.isdir(full):
                 continue
             if name == notice:
                 # 완결 그룹 — 한 단계 더 내려가 작품 폴더 수집
                 try:
-                    for sub in os.listdir(full):
+                    for sub in sorted(os.listdir(full)):
                         if os.path.isdir(os.path.join(full, sub)):
-                            _add(sub)
+                            _add('complete', sub)
                 except OSError as e:
                     if logger:
                         logger.warning('[basic] 완결 폴더 스캔 실패: %s', e)
                 continue
-            _add(name)
+            _add('main', name)
     except OSError as e:
         if logger:
             logger.warning('[basic] 다운로드 폴더 스캔 실패: %s', e)
-    found.sort()
     return found
 
 
@@ -773,6 +784,45 @@ class Worker:
                                      group=group,
                                      notice_subdir=self.notice_subdir)
 
+    def _resolve_title_meta(self, *candidates) -> Tuple[Optional[int],
+                                                        Dict[str, Any]]:
+        """후보 문자열(URL/숫자ID/제목)들로 titleId + meta 해석.
+
+        첫 성공을 반환. URL/숫자는 바로 titleId, 그 외엔 제목 검색.
+        실패 시 (None, {}).
+        """
+        for cand in candidates:
+            if not cand:
+                continue
+            tid = NaverToonClient.extract_title_id(cand)
+            if tid is None:
+                try:
+                    it = self.client.find_content(cand)
+                except NaverToonError as e:
+                    P.logger.warning('[sync] find_content(%r) 실패: %s', cand, e)
+                    it = None
+                if not it:
+                    continue
+                tid = it.get('titleId')
+            if tid is None:
+                continue
+            meta: Dict[str, Any] = {}
+            try:
+                meta = self.client.get_content(tid) or {}
+            except NaverToonError as e:
+                P.logger.warning('[%s] meta 실패: %s', cand, e)
+            return tid, meta
+        return None, {}
+
+    def _episodes_safe(self, tid: int, label: str
+                       ) -> Optional[List[Dict[str, Any]]]:
+        """info.xml 날짜 산출용 회차 목록 — 실패해도 None 으로 진행."""
+        try:
+            return self.client.get_episodes_all(tid)
+        except NaverToonError as e:
+            P.logger.warning('[%s] 회차 조회 실패 (날짜 비움): %s', label, e)
+            return None
+
     # ---- 전 작품 메타 일괄 동기화 (UI 버튼) ----
     @_exclusive
     def sync_metadata_all(self) -> dict:
@@ -786,21 +836,19 @@ class Worker:
         """
         # 대상 = 설정 watchlist(self.items) + 다운로드 폴더에 실제 존재하는 작품 폴더.
         # watchlist 가 비어 있어도 디스크에 받아둔 작품이 있으면 메타를 채운다.
-        disk_titles = discover_title_folders(self.download_root,
-                                             self.notice_subdir,
-                                             logger=P.logger)
-        targets: List[str] = list(self.items)
-        seen = set(targets)
-        for name in disk_titles:
-            if name not in seen:
-                seen.add(name)
-                targets.append(name)
+        disk = discover_title_folders(self.download_root, self.notice_subdir,
+                                      logger=P.logger)
+        watchlist = list(self.items)
+        # watchlist 에 이미 있는 폴더명은 디스크 목록에서 제외 (중복 처리 방지)
+        wl_set = set(watchlist)
+        disk = [(g, f) for (g, f) in disk if f not in wl_set]
+        total = len(watchlist) + len(disk)
 
-        P.logger.info('[basic] sync_metadata_all BEGIN watchlist=%s disk=%s '
-                      'targets=%d', self.items, disk_titles, len(targets))
+        P.logger.info('[basic] sync_metadata_all BEGIN watchlist=%s disk=%d '
+                      'total=%d', watchlist, len(disk), total)
         _auto_reset()
         _auto_set(status='running', started_at=datetime.now().isoformat(),
-                  message='메타 동기화 시작', titles_total=len(targets))
+                  message='메타 동기화 시작', titles_total=total)
         if not self.download_root:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message='download_path 미설정')
@@ -809,7 +857,7 @@ class Worker:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message='cookies_json 미설정')
             return {'ret': 'fail', 'reason': 'no_cookies'}
-        if not targets:
+        if not total:
             _auto_set(status='error', finished_at=datetime.now().isoformat(),
                       message='동기화할 작품 없음 (watchlist 비어있고 다운로드 폴더에도 작품 폴더 없음)')
             return {'ret': 'fail', 'reason': 'no_titles'}
@@ -822,30 +870,27 @@ class Worker:
                       message=f'쿠키 인증 실패: {e}')
             return {'ret': 'fail', 'reason': 'auth', 'msg': str(e)}
 
-        summary = {'titles': len(targets), 'info': 0, 'cover': 0,
+        summary = {'titles': total, 'info': 0, 'cover': 0,
                    'skipped_no_folder': 0, 'failed': 0}
-        for raw in targets:
+
+        def _bump_done():
+            _auto_set(titles_done=(summary['info'] + summary['cover']
+                                   + summary['skipped_no_folder']
+                                   + summary['failed']))
+
+        # 1) 설정 watchlist — 해석된 제목으로 main/complete 폴더 점검
+        for raw in watchlist:
             _auto_set(current_title=raw, current_phase='sync_metadata',
                       current_episode='', current_pages_done=0,
                       current_pages_total=0)
             try:
-                tid = NaverToonClient.extract_title_id(raw)
+                tid, meta = self._resolve_title_meta(raw, _title_search_key(raw))
                 if tid is None:
-                    it = self.client.find_content(raw)
-                    if not it:
-                        summary['failed'] += 1
-                        continue
-                    tid = it['titleId']
-                    title_guess = it.get('titleName') or raw
-                else:
-                    title_guess = raw
-
-                meta = {}
-                try:
-                    meta = self.client.get_content(tid) or {}
-                except NaverToonError as e:
-                    P.logger.warning('[%s] meta 실패: %s', raw, e)
-                title_name = meta.get('titleName') or title_guess
+                    P.logger.warning('[sync_metadata] 제목 매칭 실패: %r', raw)
+                    summary['failed'] += 1
+                    _bump_done()
+                    continue
+                title_name = meta.get('titleName') or _title_search_key(raw) or raw
                 _auto_set(current_title=title_name)
 
                 # main / complete 두 위치 모두 점검 — 있는 쪽에만 메타 채움
@@ -855,13 +900,7 @@ class Worker:
                     if not os.path.isdir(title_dir):
                         continue
                     any_processed = True
-                    # articles 는 첫 회차 날짜 산출용 — 폴더가 있을 때만 시도
-                    articles = None
-                    try:
-                        articles = self.client.get_episodes_all(tid)
-                    except NaverToonError as e:
-                        P.logger.warning('[%s] 회차 조회 실패 (날짜 비움): %s',
-                                         title_name, e)
+                    articles = self._episodes_safe(tid, title_name)
                     r = self._ensure_title_metadata(title_name, tid, meta,
                                                    articles, group=group)
                     if r['info']:
@@ -875,9 +914,38 @@ class Worker:
                 P.logger.error('[sync_metadata] %r 예외: %s', raw, e)
                 P.logger.error(traceback.format_exc())
                 summary['failed'] += 1
-            _auto_set(titles_done=(summary['info'] + summary['cover']
-                                   + summary['skipped_no_folder']
-                                   + summary['failed']))
+            _bump_done()
+
+        # 2) 디스크에서 찾은 작품 폴더 — 폴더 그대로에 기록
+        #    (폴더명 끝의 '[작가 …]' 블록을 떼고 제목 검색 → 실제 폴더에 info/cover)
+        for group, folder in disk:
+            _auto_set(current_title=folder, current_phase='sync_metadata',
+                      current_episode='', current_pages_done=0,
+                      current_pages_total=0)
+            try:
+                tid, meta = self._resolve_title_meta(_title_search_key(folder),
+                                                     folder)
+                if tid is None:
+                    P.logger.warning('[sync_metadata] 제목 매칭 실패: %r', folder)
+                    summary['failed'] += 1
+                    _bump_done()
+                    continue
+                title_disp = meta.get('titleName') or folder
+                _auto_set(current_title=title_disp)
+                articles = self._episodes_safe(tid, title_disp)
+                # 발견한 실제 폴더(folder)에 그대로 info.xml/cover.jpg 기록
+                r = self._ensure_title_metadata(folder, tid, meta,
+                                                articles, group=group)
+                if r['info']:
+                    summary['info'] += 1
+                if r['cover']:
+                    summary['cover'] += 1
+            except Exception as e:
+                import traceback
+                P.logger.error('[sync_metadata] %r 예외: %s', folder, e)
+                P.logger.error(traceback.format_exc())
+                summary['failed'] += 1
+            _bump_done()
 
         _auto_set(status='done', finished_at=datetime.now().isoformat(),
                   current_title='', current_phase='', current_episode='',
