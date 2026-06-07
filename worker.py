@@ -19,6 +19,24 @@ def _safe_filename(s: str) -> str:
     return s.strip().strip('.')
 
 
+def _find_episode_zip(series_dir: str, no: int) -> Optional[str]:
+    """series_dir 안에서 '{no:04d}_*.zip' 회차 zip 을 찾아 경로 반환 (없으면 None).
+
+    네이버는 (title_id, no) 로 회차를 식별하고 폴더명의 subtitle 은 뷰어에서
+    보강되어 달라질 수 있으므로, subtitle 이 아니라 회차번호(no) 접두로 매칭한다.
+    """
+    if not os.path.isdir(series_dir):
+        return None
+    prefix = f'{no:04d}_'
+    try:
+        for fn in sorted(os.listdir(series_dir)):
+            if fn.startswith(prefix) and fn.lower().endswith('.zip'):
+                return os.path.join(series_dir, fn)
+    except OSError:
+        return None
+    return None
+
+
 _IMAGE_EXTS = ('.webp', '.jpg', '.jpeg', '.png', '.gif', '.bmp')
 
 
@@ -1011,6 +1029,38 @@ class Worker:
                 'skipped': skipped, 'failed': failed}
 
     # ---- one episode ----
+    def _recognize_existing_zip(self, title_name: str, title_id: int,
+                                no: int, subtitle: str, group: str) -> bool:
+        """디스크에 회차 zip 이 이미 있으면 재다운 없이 DB에 completed 로 인식.
+
+        압축(use_compress) 사용 시에만 동작 — zip 은 정상 완료된 회차에만 생성
+        되므로 zip 존재 = 완전한 다운로드 보장. DB에 레코드가 없을 때만 호출.
+        회차 식별은 (title_id, no) — subtitle 이 달라도 no 접두로 zip 을 찾는다.
+
+        반환: 인식 처리했으면 True(호출측은 스킵), zip 없거나 압축 off 면 False.
+        """
+        if not self.use_compress:
+            return False
+        series_dir = title_dir_for(self.download_root, title_name,
+                                   group, self.notice_subdir)
+        zip_path = _find_episode_zip(series_dir, no)
+        if not zip_path:
+            return False
+        rec = ModelNaverToonItem()
+        rec.title_id = title_id
+        rec.title_name = title_name
+        rec.no = no
+        rec.episode_title = subtitle
+        rec.status = 'completed'
+        rec.save_dir = zip_path
+        rec.downloaded_at = datetime.now()
+        rec.updated_time = rec.downloaded_at
+        db.session.add(rec)
+        db.session.commit()
+        P.logger.info('[%s] %s(no=%s) 디스크 zip 존재 — 재다운 생략, DB 인식 (%s)',
+                      title_name, subtitle, no, zip_path)
+        return True
+
     def _download_one(self, title_name: str, title_id: int,
                       article: Dict[str, Any],
                       group: str = 'main') -> str:
@@ -1020,6 +1070,10 @@ class Worker:
         rec = (db.session.query(ModelNaverToonItem)
                .filter_by(title_id=title_id, no=no).first())
         if rec and rec.status == 'completed':
+            return 'skipped'
+        # DB엔 없지만 디스크에 이미 받은 zip 이 있으면 인식만 하고 스킵 (헛다운 방지)
+        if rec is None and self._recognize_existing_zip(
+                title_name, title_id, no, subtitle, group):
             return 'skipped'
         if rec is None:
             rec = ModelNaverToonItem()
@@ -1045,15 +1099,11 @@ class Worker:
             rec.episode_title = parsed_subtitle
             subtitle = parsed_subtitle
 
-        # ---- 저장 경로 ----
-        c_folder = _safe_filename(title_name)
+        # ---- 저장 경로 ---- (디스크 확인과 같은 series 폴더 규칙: title_dir_for)
         e_folder = f'{no:04d}_{_safe_filename(subtitle)}'
-        if group == 'complete':
-            save_dir = os.path.join(self.download_root,
-                                    _safe_filename(self.notice_subdir),
-                                    c_folder, e_folder)
-        else:
-            save_dir = os.path.join(self.download_root, c_folder, e_folder)
+        save_dir = os.path.join(
+            title_dir_for(self.download_root, title_name, group, self.notice_subdir),
+            e_folder)
         os.makedirs(save_dir, exist_ok=True)
         rec.save_dir = save_dir
         rec.status = 'downloading'
