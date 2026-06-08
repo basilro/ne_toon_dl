@@ -98,7 +98,7 @@ def analyze(url_or_id: str) -> Dict[str, Any]:
     title_id = NaverToonClient.extract_title_id(url_or_id)
     if not title_id:
         try:
-            hit = cli.find_content(url_or_id)
+            hit = _wkr.resolve_title_search(cli, url_or_id)
         except AuthRequiredError as e:
             return {'ret': 'fail', 'msg': f'권한 만료 — 쿠키 재주입 필요: {e}'}
         except NaverToonError as e:

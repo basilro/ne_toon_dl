@@ -219,6 +219,33 @@ def _title_search_key(name: str) -> str:
     return base or (name or '').strip()
 
 
+def _strip_leading_id_label(name: str) -> str:
+    """'775141,제목' / '775141， 제목' 처럼 앞에 숫자ID+콤마 표기가 붙으면
+    제목만 남긴다. (콤마는 작품 구분자가 아니므로 '검색용 후보' 생성에만 사용)
+    """
+    return re.sub(r'^\s*\d{4,}\s*[,，]\s*', '', name or '').strip()
+
+
+def resolve_title_search(client, raw: str):
+    """제목 문자열로 작품 검색. 원본이 안 잡히면 정리한 후보로 재시도.
+
+    후보 순서: 원본 → 끝 작가블록 '[...]' 제거 → 앞 'ID,' 표기 제거 → 둘 다 제거.
+    엉뚱한 작품을 받지 않도록 실제 매칭은 find_content(정확/공백·대소문자 일치)에
+    위임한다. 어떤 후보도 정확히 일치하지 않으면 None.
+    """
+    base = _strip_leading_id_label(raw)
+    cands: List[str] = []
+    for c in (raw, _title_search_key(raw), base, _title_search_key(base)):
+        c = (c or '').strip()
+        if c and c not in cands:
+            cands.append(c)
+    for c in cands:
+        it = client.find_content(c)
+        if it:
+            return it
+    return None
+
+
 def discover_title_folders(download_root: str,
                            notice_subdir: str = '완결',
                            logger=None) -> List[Tuple[str, str]]:
@@ -579,7 +606,7 @@ class Worker:
             display = raw
             P.logger.info('[%s] title_id 직접: %s', raw, title_id)
         else:
-            it = self.client.find_content(raw)
+            it = resolve_title_search(self.client, raw)
             if not it:
                 P.logger.warning('[%s] 검색 실패', raw)
                 return 'failed'
