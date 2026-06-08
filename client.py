@@ -475,10 +475,12 @@ class NaverToonClient:
         m = re.search(r'[?&]titleId=(\d+)', s)
         if m:
             return int(m.group(1))
-        # fallback: 4자리 이상 숫자
-        m = re.search(r'(\d{4,})', s)
-        if m:
-            return int(m.group(1))
+        # URL 형태일 때만 임의 4+자리 숫자 폴백 — 제목 속 숫자
+        # ('66666년 만에 환생한 흑마법사')나 'ID,제목' 표기를 ID로 오인하지 않게.
+        if re.search(r'comic\.naver\.com|^https?://', s):
+            m = re.search(r'(\d{4,})', s)
+            if m:
+                return int(m.group(1))
         return None
 
     @staticmethod
