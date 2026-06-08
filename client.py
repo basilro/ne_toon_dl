@@ -21,6 +21,11 @@ DEFAULT_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
               '(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36')
 
 
+def _norm_title(s: str) -> str:
+    """제목 비교용 정규화 — 공백 제거 + 소문자. ("신의탑" == "신의 탑")"""
+    return re.sub(r'\s+', '', (s or '')).lower()
+
+
 class NaverToonError(Exception):
     pass
 
@@ -287,15 +292,29 @@ class NaverToonClient:
                 or [])
 
     def find_content(self, title: str) -> Optional[Dict]:
-        """제목으로 정식 웹툰 검색 → 가장 정확한 매치 하나 반환.
+        """제목으로 정식 웹툰 검색 → 제목이 정확히 일치하는 작품만 반환.
+
+        네이버 검색(`/api/search/all`)은 키워드와 직접 관련 없는 인기작도 함께
+        돌려준다. 예) '나 혼자만 레벨업'(네이버 미연재) 검색 시 '신의 탑' 등이
+        나옴. 따라서 1순위 결과를 무조건 쓰면 엉뚱한 작품을 받게 되므로,
+        제목이 (공백/대소문자 무시) 정확히 일치할 때만 반환하고, 없으면 None.
 
         반환 dict 의 핵심 필드: titleId, titleName, finished, communityArtists 등.
         """
         items = self.search_webtoon(title)
+        if not items:
+            return None
+        # 1) 완전 일치
         for it in items:
             if it.get('titleName') == title:
                 return it
-        return items[0] if items else None
+        # 2) 공백/대소문자 무시 일치
+        key = _norm_title(title)
+        for it in items:
+            if _norm_title(it.get('titleName')) == key:
+                return it
+        # 3) 확실한 매치 없음 — 추측하지 않음 (엉뚱한 작품 다운로드 방지)
+        return None
 
     def get_content(self, title_id: int) -> Dict:
         """작품 메타 (`/api/article/list/info`).
