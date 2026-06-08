@@ -2,12 +2,13 @@
 {% block content %}
 
 <div>
-  {{ macros.setting_input_text_and_buttons('manual_url', '네이버웹툰 작품/회차 URL',
+  {{ macros.setting_input_text_and_buttons('manual_url', '네이버웹툰 작품 제목 / URL / titleId',
       [['manualAnalyzeBtn',  '분석'],
        ['manualDownloadBtn', '선택 다운로드'],
        ['manualCancelBtn',   '취소']],
       value='',
-      desc=['예) 작품 전체: https://comic.naver.com/webtoon/list?titleId=183559',
+      desc=['예) 작품 제목: 신의 탑 (정확한 제목, 띄어쓰기 달라도 인식)',
+            '예) 작품 전체: https://comic.naver.com/webtoon/list?titleId=183559',
             '예) 한 회차만: https://comic.naver.com/webtoon/detail?titleId=183559&no=594 (그 회차만 자동 선택)',
             '예) 183559 (titleId 숫자만)',
             '분석 → 받을 회차 체크 → 선택 다운로드. 무료·미수신만 선택 가능(유료/잠금/이미받음 제외).']) }}
@@ -146,7 +147,7 @@ function syncCheckAll(){
 $('body').on('click', '#manualAnalyzeBtn', function(e){
   e.preventDefault();
   var url = ($('#manual_url').val() || '').trim();
-  if (!url) { $.notify('URL을 입력하세요', {className: 'warn'}); return; }
+  if (!url) { $.notify('작품 제목 또는 URL을 입력하세요', {className: 'warn'}); return; }
   $.notify('분석 중...', {className: 'info'});
   $.post('/' + package_name + '/ajax/basic/command',
          {command: 'manalyze', arg1: url, url: url},

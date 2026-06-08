@@ -79,9 +79,6 @@ def cancel():
 def analyze(url_or_id: str) -> Dict[str, Any]:
     """URL → 작품 메타 + 회차 목록. 다운로드는 안 함."""
     P.logger.info('[manual] analyze BEGIN url_or_id=%r', url_or_id)
-    title_id = NaverToonClient.extract_title_id(url_or_id)
-    if not title_id:
-        return {'ret': 'fail', 'msg': f'URL에서 titleId 추출 실패: {url_or_id!r}'}
 
     cookies_json = (P.ModelSetting.get('cookies_json') or '').strip()
     if not cookies_json:
@@ -96,6 +93,24 @@ def analyze(url_or_id: str) -> Dict[str, Any]:
     except Exception as e:
         P.logger.error(traceback.format_exc())
         return {'ret': 'fail', 'msg': f'클라이언트 생성 실패: {e}'}
+
+    # URL/ID 우선, 없으면 작품명으로 검색 (체크할 작품 목록과 동일한 경로).
+    title_id = NaverToonClient.extract_title_id(url_or_id)
+    if not title_id:
+        try:
+            hit = cli.find_content(url_or_id)
+        except AuthRequiredError as e:
+            return {'ret': 'fail', 'msg': f'권한 만료 — 쿠키 재주입 필요: {e}'}
+        except NaverToonError as e:
+            return {'ret': 'fail', 'msg': f'검색 실패: {e}'}
+        if not hit:
+            return {'ret': 'fail',
+                    'msg': f'작품을 찾지 못함 — 정확한 제목 또는 URL/ID로 시도: {url_or_id!r}'}
+        title_id = hit.get('titleId')
+        P.logger.info('[manual] analyze 검색→ title_id=%s title=%r',
+                      title_id, hit.get('titleName'))
+    if not title_id:
+        return {'ret': 'fail', 'msg': f'titleId 확인 실패: {url_or_id!r}'}
 
     try:
         meta = cli.get_content(title_id)
