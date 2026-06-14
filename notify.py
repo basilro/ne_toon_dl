@@ -67,6 +67,30 @@ def build_download_summary(completed_items: List[Dict]) -> str:
     return '\n'.join(lines)
 
 
+def build_error_summary(failed_titles: List[Dict], partial_episodes: List[Dict]) -> str:
+    """작품 검색 실패 + 부분/전체 다운로드 실패 항목 → 발송용 텍스트.
+
+    failed_titles: [{'title': str, 'reason': str}, ...]
+    partial_episodes: [{'title_name': str, 'subtitle': str,
+                        'downloaded': int, 'total': int}, ...]
+    """
+    if not failed_titles and not partial_episodes:
+        return ''
+    lines: List[str] = ['[네이버웹툰] 경고/실패 발생']
+    if failed_titles:
+        lines.append('')
+        lines.append('■ 작품 처리 실패')
+        for it in failed_titles:
+            lines.append(f'- {it["title"]}: {it["reason"]}')
+    if partial_episodes:
+        lines.append('')
+        lines.append('■ 회차 다운로드 불완전')
+        for it in partial_episodes:
+            lines.append(f'- {it["title_name"]} / {it["subtitle"]}'
+                         f' ({it["downloaded"]}/{it["total"]}페이지)')
+    return '\n'.join(lines)
+
+
 def build_cookie_expired_message() -> str:
     return ('[네이버웹툰] 쿠키 만료 감지\n'
             '설정 페이지에서 쿠키를 재주입해주세요.\n'
