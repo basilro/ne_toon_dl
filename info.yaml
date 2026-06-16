@@ -1,6 +1,6 @@
-title: "ne_toon_dl"
-version: "0.1.40"
-package_name: "ne_toon_dl"
-developer: "basilro"
-description: "네이버웹툰 무료 회차 자동 다운로드"
-home: "https://github.com/basilro/ne_toon_dl"
+description: 네이버웹툰 무료 회차 자동 다운로드
+developer: basilro
+home: https://github.com/basilro/ne_toon_dl
+package_name: ne_toon_dl
+title: ne_toon_dl
+version: 0.1.41
