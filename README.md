@@ -60,6 +60,7 @@ https://github.com/basilro/ne_toon_dl
 - **DB**: `ne_toon_dl.db` (플러그인 전용 SQLite, WAL 모드 자동 적용)
 - **잠금**: 다른 플러그인(kaka_pe_dl 등)과 독립 실행 — 기다무 플러그인이 돌아도 블록 없음
 - **UI**: 작업 중에도 작업내역 페이지 조회 가능 (WAL 덕분에 DB 락 없음)
+- **메타**: 다운로드 폴더에 `info.xml`(ComicInfo) + `cover.jpg` 자동 생성 — Kavita/Komga 호환
 
 ---
 
@@ -67,10 +68,19 @@ https://github.com/basilro/ne_toon_dl
 
 | 버전 | 내용 |
 |---|---|
+| 0.1.55 | ComicInfo에 `CommentUrl` 태그 추가 |
+| 0.1.54 | ComicInfo 커스텀 태그 추가 — SeriesStatus / FavoriteCount |
+| 0.1.53 | ComicInfo Notes에 전 N화 추가 |
+| 0.1.52 | 로그 정리 — 불필요 debug 제거, 미사용 import 제거 |
+| 0.1.50 | 관리패널 원장 인증 개인키 교체, 원장 UI 하단 이동 |
+| 0.1.49 | 원장 암호 잠금 + 서버 폴더 브라우저 (파일 검증) |
+| 0.1.46 | info.xml 스케줄마다 갱신 (cover는 있으면 유지) |
+| 0.1.45 | 전체 .pyf sc.encode 포맷으로 재암호화 — 로드 복구 |
+| 0.1.43 | info.xml에 AgeRating / Count / Web / Manga 추가 |
+| 0.1.42 | info.xml에 통계 추가 — CommunityRating(별점) / 팬수 / 연재요일 |
 | 0.1.34 | partial/failed 회차 재시도 시 이전 폴더 삭제 후 처음부터 재다운로드 |
 | 0.1.33 | WAL을 ne_toon_dl.db에 올바르게 적용 — 작업 중 UI 무한로딩 해결 |
 | 0.1.32 | kaka_pe_dl 공유 락 제거 — kaka_pe_dl이 돌 때도 ne_toon_dl 독립 실행 |
 | 0.1.31 | 작품 검색 실패·불완전 다운로드 Discord 알림 추가 |
-| 0.1.30 | worker.pyf 재암호화 버그 수정 (sc.encode 포맷) |
 | 0.1.29 | 이미지 페이지 3회 재시도, WAL 모드 (초기 적용) |
 | 0.1.28 | .pyf 상대 import 수정 |
