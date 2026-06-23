@@ -9,6 +9,16 @@
                             ['syncMetadataBtn', '메타 동기화'],
                             ['compressAllBtn', '압축 처리'],
                             ['pagecountAllBtn', '페이지수 부여']]) }}
+  <div style="margin:10px 0; padding:10px; border:1px solid #ddd; border-radius:6px;">
+    <label style="font-weight:600;">폴더 지정 메타 동기화 (임시 기능)</label>
+    <div style="display:flex; gap:6px; margin-top:6px;">
+      <input type="text" id="sync_meta_folder" class="form-control"
+             placeholder="예) /mnt/data/웹툰보관" style="flex:1;"/>
+      <button id="selectSyncFolderBtn" class="btn btn-outline-secondary" type="button">폴더 선택</button>
+      <button id="syncMetadataFolderBtn" class="btn btn-primary" type="button">이 폴더 동기화</button>
+    </div>
+    <small style="color:#666;">다운로드 경로가 아닌 임의 폴더의 하위 작품 폴더에 info.xml/cover.jpg 를 생성·갱신합니다. (회차 상관없이 항상 갱신)</small>
+  </div>
   {{ macros.m_row_start('5') }}
   {{ macros.m_row_end() }}
   <nav>
@@ -130,6 +140,32 @@ $('body').on('click', '#select_download_path_btn', function(e){
   });
 });
 
+$('body').on('click', '#selectSyncFolderBtn', function(e){
+  e.preventDefault();
+  var path = $('#sync_meta_folder').val().trim() || $('#download_path').val().trim() || '/';
+  globalSelectLocalFolder('메타 동기화 대상 폴더', path, function(result){
+    $('#sync_meta_folder').val(result);
+  });
+});
+
+$('body').on('click', '#syncMetadataFolderBtn', function(e){
+  e.preventDefault();
+  var path = $('#sync_meta_folder').val().trim();
+  if(!path){ $.notify('대상 폴더를 지정하세요', {className: 'error'}); return; }
+  if (!confirm('지정한 폴더의 작품들에 info.xml / cover.jpg 를 생성·갱신합니다.\n폴더: ' + path + '\n진행 상황은 \"진행 상황\" 메뉴에서 확인하세요.\n계속하시겠습니까?')) return;
+  $.post('/' + package_name + '/ajax/basic/command',
+         {command: 'sync_metadata_folder', arg1: path},
+         function(data){
+    if(data && data.ret === 'success'){
+      $.notify(data.msg || '폴더 메타 동기화 시작됨', {className: 'success'});
+    } else {
+      $.notify((data && data.msg) || '실행 실패', {className: 'error'});
+    }
+  }).fail(function(xhr){
+    $.notify('서버 호출 실패: ' + xhr.status, {className: 'error'});
+  });
+});
+
 $('body').on('click', '#verifyCookiesBtn', function(e){
   e.preventDefault();
   $.post('/' + package_name + '/ajax/basic/command',
@@ -174,7 +210,7 @@ $('body').on('click', '#compressAllBtn', function(e){
 
 $('body').on('click', '#syncMetadataBtn', function(e){
   e.preventDefault();
-  if (!confirm('체크할 작품 폴더에 info.xml / cover.jpg 가 없으면 생성합니다.\n다운로드 폴더에 작품 폴더가 있는 항목만 처리됩니다.\n진행 상황은 \"진행 상황\" 메뉴에서 확인하세요.\n계속하시겠습니까?')) return;
+  if (!confirm('체크할 작품 폴더의 info.xml 을 항상 갱신하고, cover.jpg 는 없으면 생성합니다.\n다운로드 폴더에 작품 폴더가 있는 항목만 처리됩니다.\n진행 상황은 \"진행 상황\" 메뉴에서 확인하세요.\n계속하시겠습니까?')) return;
   $.post('/' + package_name + '/ajax/basic/command',
          {command: 'sync_metadata'},
          function(data){

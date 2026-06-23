@@ -6,13 +6,7 @@ import requests
 
 def send_webhook(url: str, message: str, username: str = 'ne_toon_dl',
                  timeout: int = 10) -> bool:
-    """웹훅 URL 로 메시지 발송. URL 비어있으면 False 반환 (no-op).
-
-    Discord / Slack / 기타 자동 분기:
-      - discord.com/api/webhooks → {"content": msg, "username": ...}
-      - hooks.slack.com         → {"text": msg}
-      - 기타                     → {"content": msg, "text": msg}
-    """
+    """웹훅 URL 로 메시지 발송. URL 비어있으면 False 반환 (no-op)."""
     if not url or not message:
         return False
     u = url.strip()
@@ -30,14 +24,9 @@ def send_webhook(url: str, message: str, username: str = 'ne_toon_dl',
 
 
 def build_download_summary(completed_items: List[Dict]) -> str:
-    """완료된 다운로드 항목 list → 발송용 텍스트.
-
-    completed_items: [{'group': 'main'|'complete', 'title_name': str,
-                       'episode_title': str, 'no': int}, ...]
-    """
+    """완료된 다운로드 항목 list → 발송용 텍스트."""
     if not completed_items:
         return ''
-    # group → title_name → list[episode]
     grouped: Dict[str, Dict[str, List[Dict]]] = {}
     for it in completed_items:
         g = it.get('group') or 'main'
@@ -68,12 +57,7 @@ def build_download_summary(completed_items: List[Dict]) -> str:
 
 
 def build_error_summary(failed_titles: List[Dict], partial_episodes: List[Dict]) -> str:
-    """작품 검색 실패 + 부분/전체 다운로드 실패 항목 → 발송용 텍스트.
-
-    failed_titles: [{'title': str, 'reason': str}, ...]
-    partial_episodes: [{'title_name': str, 'subtitle': str,
-                        'downloaded': int, 'total': int}, ...]
-    """
+    """작품 검색 실패 + 부분/전체 다운로드 실패 항목 → 발송용 텍스트."""
     if not failed_titles and not partial_episodes:
         return ''
     lines: List[str] = ['[네이버웹툰] 경고/실패 발생']
