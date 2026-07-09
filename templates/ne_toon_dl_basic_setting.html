@@ -41,6 +41,10 @@
             desc=['{다운로드경로}/{작품제목}/{NNNN_회차제목}/{001.jpg ...} 형태로 저장됨',
                   '네이버웹툰 이미지는 원본 jpg 그대로 저장됨 (변환 없음)']) }}
 
+        {{ macros.setting_checkbox('weekday_filter', '요일별 필터',
+            value=arg['weekday_filter'],
+            desc='On: 스케줄 실행 시 오늘 요일에 연재하는 작품만 처리. 완결/휴재/미확인 작품은 요일과 무관하게 그대로 처리.') }}
+
         {{ macros.setting_checkbox('use_compress', '회차 폴더 ZIP 압축',
             value=arg['use_compress'],
             desc='On: 정상 다운로드 완료 시 회차 폴더를 NNNN_회차.zip 으로 묶고 원본 폴더 삭제. 부분 실패 회차는 압축 안 함.') }}
