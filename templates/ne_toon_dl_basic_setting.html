@@ -41,6 +41,11 @@
             desc=['{다운로드경로}/{작품제목}/{NNNN_회차제목}/{001.jpg ...} 형태로 저장됨',
                   '네이버웹툰 이미지는 원본 jpg 그대로 저장됨 (변환 없음)']) }}
 
+        {{ macros.setting_input_text('max_per_title', '작품당 1회 실행 최대 신규 회차',
+            value=arg['max_per_title'],
+            desc=['한 작품에서 스케줄 1회 실행 시 새로 받을 회차 수 상한(기본 10).',
+                  '초과분은 다음 실행에서 이어 받음. 0 이하로 두면 무제한.']) }}
+
         {{ macros.setting_checkbox('weekday_filter', '요일별 필터',
             value=arg['weekday_filter'],
             desc='On: 스케줄 실행 시 오늘 요일에 연재하는 작품만 처리. 완결/휴재/미확인 작품은 요일과 무관하게 그대로 처리.') }}
