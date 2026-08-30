@@ -38,8 +38,34 @@
         {{ macros.setting_input_text_and_buttons('download_path', '다운로드 경로',
             [['select_download_path_btn', '경로 선택']],
             value=arg['download_path'],
-            desc=['{다운로드경로}/{작품제목}/{NNNN_회차제목}/{001.jpg ...} 형태로 저장됨',
+            desc=['{다운로드경로}/{작품폴더}/{회차폴더}/{001.jpg ...} 형태로 저장됨',
+                  '작품·회차 폴더 이름은 아래 형식 설정으로 바꿀 수 있음 (기본: 작품제목 / NNNN_회차제목)',
                   '네이버웹툰 이미지는 원본 jpg 그대로 저장됨 (변환 없음)']) }}
+
+        {{ macros.setting_input_text('format_title', '작품 폴더명 형식',
+            value=arg['format_title'],
+            desc=['작품 폴더 이름을 만드는 템플릿. 비우면 기본값 {title} 로 동작.',
+                  '쓸 수 있는 값: {title} 작품명, {title_id} 작품 번호',
+                  '예) {title} → 전지적 독자 시점   /   {title} [{title_id}] → 전지적 독자 시점 [183559]']) }}
+
+        {{ macros.setting_input_text('format_episode', '회차 폴더명 형식',
+            value=arg['format_episode'],
+            desc=['회차 폴더(및 ZIP) 이름을 만드는 템플릿. 비우면 기본값 {no:04d}_{subtitle} 로 동작.',
+                  '쓸 수 있는 값: {no} 회차 번호, {subtitle} 회차명, {title} 작품명, {title_id} 작품 번호',
+                  '자릿수 지정: {no:04d} → 0003, {no:03d} → 003, {no} → 3',
+                  '예) [{no:03d}] {subtitle} → [003] 3화 - 시작']) }}
+
+        <div class="form-group" style="margin-bottom:16px;">
+          <div class="col-sm-2 control-label"></div>
+          <div class="col-sm-10">
+            <button class="btn btn-sm btn-outline-secondary" id="formatPreviewBtn">형식 미리보기</button>
+            <div id="formatPreviewBox" style="margin-top:8px; color:#666; font-size:0.9em;"></div>
+            <div style="margin-top:6px; color:#999; font-size:0.85em;">
+              ※ 형식을 바꿔도 이미 받아 둔 폴더 이름은 바뀌지 않습니다. 새로 받는 회차부터 적용됩니다.
+              파일명에 쓸 수 없는 문자(\ / * ? : " &lt; &gt; |)는 자동으로 _ 로 바뀝니다.
+            </div>
+          </div>
+        </div>
 
         {{ macros.setting_input_text('max_per_title', '작품당 1회 실행 최대 신규 회차',
             value=arg['max_per_title'],
@@ -52,7 +78,7 @@
 
         {{ macros.setting_checkbox('use_compress', '회차 폴더 ZIP 압축',
             value=arg['use_compress'],
-            desc='On: 정상 다운로드 완료 시 회차 폴더를 NNNN_회차.zip 으로 묶고 원본 폴더 삭제. 부분 실패 회차는 압축 안 함.') }}
+            desc='On: 정상 다운로드 완료 시 회차 폴더를 (회차 폴더명).zip 으로 묶고 원본 폴더 삭제. 부분 실패 회차는 압축 안 함.') }}
 
         <hr style="margin:18px 0;"/>
         <h5 style="margin-bottom:8px;">유료화 공지 자동 다운로드</h5>
@@ -138,6 +164,25 @@ $(document).ready(function(){
   }
   syncProxyInput();
   $('body').on('change', '#use_proxy', syncProxyInput);
+});
+
+$('body').on('click', '#formatPreviewBtn', function(e){
+  e.preventDefault();
+  $.post('/' + package_name + '/ajax/basic/command',
+         {command: 'format_preview',
+          arg1: $('#format_title').val(),
+          arg2: $('#format_episode').val()},
+         function(data){
+    if(!data || data.ret !== 'success'){
+      $('#formatPreviewBox').html('<span style="color:#c00;">미리보기 실패</span>');
+      return;
+    }
+    var html = '저장 경로 예시: <code>' + $('<div>').text(data.path).html() + '</code>';
+    if(data.msg){ html += '<br/><span style="color:#c00;">' + $('<div>').text(data.msg).html() + '</span>'; }
+    $('#formatPreviewBox').html(html);
+  }).fail(function(xhr){
+    $('#formatPreviewBox').html('<span style="color:#c00;">서버 호출 실패: ' + xhr.status + '</span>');
+  });
 });
 
 $('body').on('click', '#select_download_path_btn', function(e){
