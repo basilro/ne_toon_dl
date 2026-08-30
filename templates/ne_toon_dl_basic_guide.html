@@ -70,19 +70,19 @@
     └─ 작품제목/0001_회차제목/...</pre>
 
   <p style="font-size:92%;">위 <code>작품제목</code> · <code>0001_회차제목</code> 은 기본 형식입니다.
-  설정 탭의 <strong>작품 폴더명 형식</strong> · <strong>회차 폴더명 형식</strong> 에서 바꿀 수 있고,
-  자동 다운로드와 수동 다운로드가 같은 설정을 씁니다.</p>
+  설정 탭에서 바꿀 수 있고, 자동 다운로드와 수동 다운로드가 같은 설정을 씁니다.
+  규칙은 하나입니다. <strong>중괄호로 감싼 말만 값으로 바뀌고, 나머지 글자는 적은 그대로</strong> 쓰입니다.</p>
   <table>
-    <tr><th>토큰</th><th>뜻</th><th>예시 결과</th></tr>
-    <tr><td><code>{title}</code></td><td>작품명</td><td>전지적 독자 시점</td></tr>
-    <tr><td><code>{subtitle}</code></td><td>회차명</td><td>3화 - 시작</td></tr>
-    <tr><td><code>{no}</code></td><td>회차 번호</td><td>3</td></tr>
-    <tr><td><code>{no:04d}</code></td><td>회차 번호(자릿수 지정)</td><td>0003</td></tr>
-    <tr><td><code>{title_id}</code></td><td>작품 번호</td><td>183559</td></tr>
+    <tr><th>쓸 수 있는 말</th><th>바뀌는 값</th></tr>
+    <tr><td><code>{작품}</code></td><td>전지적 독자 시점</td></tr>
+    <tr><td><code>{회차}</code></td><td>3화 - 시작</td></tr>
+    <tr><td><code>{번호}</code></td><td>0003 (자릿수는 별도 설정, 0이면 3)</td></tr>
+    <tr><td><code>{작품번호}</code></td><td>183559</td></tr>
   </table>
   <ul>
-    <li>기본값은 작품 <code>{title}</code>, 회차 <code>{no:04d}_{subtitle}</code> 이고, 비워 두면 기본값으로 동작합니다.</li>
-    <li>파일명에 못 쓰는 문자는 <code>_</code> 로 자동 치환합니다. 템플릿이 잘못되면 기본값으로 받고 로그에 경고를 남깁니다.</li>
+    <li>기본값은 작품 <code>{작품}</code>, 회차 <code>{번호}_{회차}</code>, 자릿수 <code>4</code> 입니다. 비워 두면 기본값으로 동작합니다.</li>
+    <li>설정 탭의 <strong>예시</strong> 버튼을 누르면 입력란이 채워지고, <strong>미리보기</strong> 로 실제 저장 경로를 확인할 수 있습니다.</li>
+    <li>파일명에 못 쓰는 문자는 <code>_</code> 로 자동 치환합니다. 모르는 말을 적으면 기본값으로 받고 로그에 경고를 남깁니다.</li>
     <li>형식을 바꿔도 <strong>이미 받아 둔 폴더 이름은 그대로</strong>입니다. 새로 받는 회차부터 적용됩니다.</li>
     <li>압축을 켜 두었다면 이전 형식(<code>NNNN_</code>)으로 만든 zip 도 함께 인식하므로 재다운로드가 일어나지 않습니다.</li>
   </ul>

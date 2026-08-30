@@ -44,21 +44,34 @@
 
         {{ macros.setting_input_text('format_title', '작품 폴더명 형식',
             value=arg['format_title'],
-            desc=['작품 폴더 이름을 만드는 템플릿. 비우면 기본값 {title} 로 동작.',
-                  '쓸 수 있는 값: {title} 작품명, {title_id} 작품 번호',
-                  '예) {title} → 전지적 독자 시점   /   {title} [{title_id}] → 전지적 독자 시점 [183559]']) }}
+            desc=['중괄호로 감싼 말만 값으로 바뀌고, 나머지 글자는 적은 그대로 쓰입니다.',
+                  '쓸 수 있는 말: {작품} {작품번호}',
+                  '비우면 {작품} 으로 동작합니다.']) }}
 
         {{ macros.setting_input_text('format_episode', '회차 폴더명 형식',
             value=arg['format_episode'],
-            desc=['회차 폴더(및 ZIP) 이름을 만드는 템플릿. 비우면 기본값 {no:04d}_{subtitle} 로 동작.',
-                  '쓸 수 있는 값: {no} 회차 번호, {subtitle} 회차명, {title} 작품명, {title_id} 작품 번호',
-                  '자릿수 지정: {no:04d} → 0003, {no:03d} → 003, {no} → 3',
-                  '예) [{no:03d}] {subtitle} → [003] 3화 - 시작']) }}
+            desc=['쓸 수 있는 말: {번호} {회차} {작품} {작품번호}',
+                  '비우면 {번호}_{회차} 로 동작합니다.']) }}
+
+        {{ macros.setting_input_text('no_digits', '회차 번호 자릿수',
+            value=arg['no_digits'], col='2',
+            desc=['{번호} 를 몇 자리로 채울지. 4면 0003, 2면 03, 0이면 3.']) }}
 
         <div class="form-group" style="margin-bottom:16px;">
           <div class="col-sm-2 control-label"></div>
           <div class="col-sm-10">
-            <button class="btn btn-sm btn-outline-secondary" id="formatPreviewBtn">형식 미리보기</button>
+            <div style="margin-bottom:6px;">
+              <span style="color:#888; font-size:0.9em;">예시(누르면 채워집니다):</span>
+              <button class="btn btn-sm btn-outline-secondary fmt-preset"
+                      data-t="{작품}" data-e="{번호}_{회차}">0003_3화 - 시작</button>
+              <button class="btn btn-sm btn-outline-secondary fmt-preset"
+                      data-t="{작품}" data-e="[{번호}] {회차}">[0003] 3화 - 시작</button>
+              <button class="btn btn-sm btn-outline-secondary fmt-preset"
+                      data-t="{작품}" data-e="{번호}">0003</button>
+              <button class="btn btn-sm btn-outline-secondary fmt-preset"
+                      data-t="{작품} [{작품번호}]" data-e="{번호}_{회차}">작품명 뒤에 작품번호</button>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" id="formatPreviewBtn">미리보기</button>
             <div id="formatPreviewBox" style="margin-top:8px; color:#666; font-size:0.9em;"></div>
             <div style="margin-top:6px; color:#999; font-size:0.85em;">
               ※ 형식을 바꿔도 이미 받아 둔 폴더 이름은 바뀌지 않습니다. 새로 받는 회차부터 적용됩니다.
@@ -166,12 +179,20 @@ $(document).ready(function(){
   $('body').on('change', '#use_proxy', syncProxyInput);
 });
 
+$('body').on('click', '.fmt-preset', function(e){
+  e.preventDefault();
+  $('#format_title').val($(this).attr('data-t'));
+  $('#format_episode').val($(this).attr('data-e'));
+  $('#formatPreviewBtn').click();
+});
+
 $('body').on('click', '#formatPreviewBtn', function(e){
   e.preventDefault();
   $.post('/' + package_name + '/ajax/basic/command',
          {command: 'format_preview',
           arg1: $('#format_title').val(),
-          arg2: $('#format_episode').val()},
+          arg2: $('#format_episode').val(),
+          arg3: $('#no_digits').val()},
          function(data){
     if(!data || data.ret !== 'success'){
       $('#formatPreviewBox').html('<span style="color:#c00;">미리보기 실패</span>');
