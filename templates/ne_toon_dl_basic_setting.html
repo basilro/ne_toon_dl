@@ -45,17 +45,17 @@
         {{ macros.setting_input_text('format_title', '작품 폴더명 형식',
             value=arg['format_title'],
             desc=['중괄호로 감싼 말만 값으로 바뀌고, 나머지 글자는 적은 그대로 쓰입니다.',
-                  '쓸 수 있는 말: {작품} {작품번호}',
-                  '비우면 {작품} 으로 동작합니다.']) }}
+                  '쓸 수 있는 말: {title} = 작품명, {title_id} = 작품 번호',
+                  '비우면 {title} 로 동작합니다.']) }}
 
         {{ macros.setting_input_text('format_episode', '회차 폴더명 형식',
             value=arg['format_episode'],
-            desc=['쓸 수 있는 말: {번호} {회차} {작품} {작품번호}',
-                  '비우면 {번호}_{회차} 로 동작합니다.']) }}
+            desc=['쓸 수 있는 말: {no} = 회차 번호, {subtitle} = 회차명, {title} = 작품명, {title_id} = 작품 번호',
+                  '비우면 {no}_{subtitle} 로 동작합니다.']) }}
 
         {{ macros.setting_input_text('no_digits', '회차 번호 자릿수',
             value=arg['no_digits'], col='2',
-            desc=['{번호} 를 몇 자리로 채울지. 4면 0003, 2면 03, 0이면 3.']) }}
+            desc=['{no} 를 몇 자리로 채울지. 4면 0003, 2면 03, 0이면 3.']) }}
 
         <div class="form-group" style="margin-bottom:16px;">
           <div class="col-sm-2 control-label"></div>
@@ -63,13 +63,13 @@
             <div style="margin-bottom:6px;">
               <span style="color:#888; font-size:0.9em;">예시(누르면 채워집니다):</span>
               <button class="btn btn-sm btn-outline-secondary fmt-preset"
-                      data-t="{작품}" data-e="{번호}_{회차}">0003_3화 - 시작</button>
+                      data-t="{title}" data-e="{no}_{subtitle}">0003_3화 - 시작</button>
               <button class="btn btn-sm btn-outline-secondary fmt-preset"
-                      data-t="{작품}" data-e="[{번호}] {회차}">[0003] 3화 - 시작</button>
+                      data-t="{title}" data-e="[{no}] {subtitle}">[0003] 3화 - 시작</button>
               <button class="btn btn-sm btn-outline-secondary fmt-preset"
-                      data-t="{작품}" data-e="{번호}">0003</button>
+                      data-t="{title}" data-e="{no}">0003</button>
               <button class="btn btn-sm btn-outline-secondary fmt-preset"
-                      data-t="{작품} [{작품번호}]" data-e="{번호}_{회차}">작품명 뒤에 작품번호</button>
+                      data-t="{title} [{title_id}]" data-e="{no}_{subtitle}">작품명 뒤에 작품번호</button>
             </div>
             <button class="btn btn-sm btn-outline-secondary" id="formatPreviewBtn">미리보기</button>
             <div id="formatPreviewBox" style="margin-top:8px; color:#666; font-size:0.9em;"></div>
@@ -103,7 +103,7 @@
         {{ macros.setting_input_text('notice_subdir', '유료화 작품 저장 폴더명',
             value=arg['notice_subdir'],
             desc=['다운로드 경로 아래 만들어질 하위 폴더 이름. 기본: 완결',
-                  '예) {다운로드경로}/완결/{작품}/{NNNN_회차}/',
+                  '예) {다운로드경로}/완결/작품제목/0001_회차제목/',
                   '※ 전환일(공지의 M월 N일)이 이미 지났으면 자동 스킵',
                   '※ 이번 달 공지만 처리 — 지난달/이전 공지는 무시']) }}
 
